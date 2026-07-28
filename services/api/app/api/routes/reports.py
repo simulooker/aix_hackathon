@@ -1,3 +1,4 @@
+from typing import Annotated
 from uuid import uuid4
 
 from fastapi import APIRouter, File, Form, UploadFile, status
@@ -9,9 +10,9 @@ router = APIRouter(prefix="/reports", tags=["reports"])
 
 @router.post("", response_model=ReportResponse, status_code=status.HTTP_202_ACCEPTED)
 async def create_report(
-    image: UploadFile = File(...),
-    latitude: float = Form(...),
-    longitude: float = Form(...),
+    image: Annotated[UploadFile, File()],
+    latitude: Annotated[float, Form()],
+    longitude: Annotated[float, Form()],
 ) -> ReportResponse:
     """Accept a photo report. Storage and AI inference are added next."""
     return ReportResponse(
