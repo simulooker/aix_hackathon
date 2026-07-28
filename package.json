@@ -1,0 +1,15 @@
+{
+  "name": "aix-hackathon",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/mobile"
+  ],
+  "scripts": {
+    "mobile": "npm run start --workspace mobile",
+    "mobile:android": "npm run android --workspace mobile",
+    "mobile:web": "npm run web --workspace mobile",
+    "mobile:lint": "npm run lint --workspace mobile",
+    "mobile:typecheck": "npm run typecheck --workspace mobile"
+  }
+}

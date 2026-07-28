@@ -1,0 +1,66 @@
+{
+  "expo": {
+    "name": "AI 안심길",
+    "slug": "ai-safe-route",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "aisafeway",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "현재 위치와 안전한 보행 경로를 안내하기 위해 위치를 사용합니다.",
+        "NSCameraUsageDescription": "보행 위험 요소를 촬영하여 신고하기 위해 카메라를 사용합니다.",
+        "NSPhotoLibraryUsageDescription": "위험 요소 신고 사진을 선택하기 위해 사진 보관함을 사용합니다."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "backgroundImage": "./assets/images/android-icon-background.png",
+        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+      },
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "output": "static",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "현재 위치와 안전한 보행 경로를 안내하기 위해 위치를 사용합니다."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "위험 요소 신고 사진을 선택하기 위해 사진 보관함을 사용합니다.",
+          "cameraPermission": "보행 위험 요소를 촬영하여 신고하기 위해 카메라를 사용합니다."
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#ffffff",
+          "dark": {
+            "backgroundColor": "#000000"
+          }
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}

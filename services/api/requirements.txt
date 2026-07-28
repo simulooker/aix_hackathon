@@ -1,0 +1,11 @@
+fastapi>=0.116,<1.0
+uvicorn[standard]>=0.35,<1.0
+pydantic-settings>=2.10,<3.0
+python-multipart>=0.0.20,<1.0
+supabase>=2.17,<3.0
+
+# Add these when route calculation and AI inference are implemented.
+# osmnx>=2.0,<3.0
+# networkx>=3.5,<4.0
+# torch
+# ultralytics
