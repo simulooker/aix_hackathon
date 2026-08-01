@@ -3,6 +3,11 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.router import api_router
 from app.core.config import settings
+from app.db.session import Base, engine
+from app.models.user import User  # 👈 [추가] User 모델을 가져와야 Base가 users 테이블 구조를 인식합니다!
+
+# 서버 실행 시 DB 테이블 자동 생성 (users 테이블 포함)
+Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="AI 안심길 API",
