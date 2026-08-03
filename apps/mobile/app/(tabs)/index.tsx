@@ -30,7 +30,8 @@ export default function HomeScreen() {
       <View style={styles.notice}>
         <Text style={styles.noticeTitle}>개발 안내</Text>
         <Text style={styles.noticeBody}>
-          현재는 프로젝트 골격 단계입니다. 다음 단계에서 경로 탐색과 AI 판별을 연결합니다.
+          신고·지도·경로 탐색이 서버와 연결되어 있습니다. YOLOv8 모델은 학습 중이며, 완료 전까지는
+          휴리스틱 판별기로 위험도를 추정합니다.
         </Text>
       </View>
     </SafeAreaView>

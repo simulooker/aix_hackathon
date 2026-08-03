@@ -40,15 +40,16 @@ uvicorn app.main:app --reload
 - API 상태: `http://localhost:8000/health`
 - API 문서: `http://localhost:8000/docs`
 
-## 첫 개발 순서
+## 진행 상황
 
-1. 모바일 앱에서 현재 위치 표시
-2. 사진 선택 또는 촬영
-3. FastAPI로 신고 전송
-4. Supabase Storage와 PostGIS 저장
-5. YOLO 분석 연결
-6. OSMnx/NetworkX 경로 계산 연결
-7. 지도 경로 및 음성 안내
+1. ✅ 모바일 앱에서 현재 위치 표시
+2. ✅ 사진 선택 또는 촬영
+3. ✅ FastAPI로 신고 전송
+4. ✅ Supabase Storage와 PostGIS 저장 (미설정 시 로컬 폴백)
+5. 🔄 YOLO 분석 연결 — 모델 학습 완료 전까지는 휴리스틱 `MockHazardDetector`가
+   동작하며, `services/api/models/best.pt`가 생기면 자동으로 전환됩니다.
+6. ✅ OSMnx/NetworkX 경로 계산 연결 (기상청 결빙 위험도 반영)
+7. ✅ 지도 경로 및 음성 안내
 
 ## 브랜치 규칙
 

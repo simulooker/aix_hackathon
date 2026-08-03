@@ -24,6 +24,9 @@ __pycache__/
 services/api/models/*
 !services/api/models/.gitkeep
 
+# Local fallback storage for hazard photos (used when Supabase isn't configured)
+services/api/uploads/
+
 # Editors and OS files
 .idea/
 .vscode/

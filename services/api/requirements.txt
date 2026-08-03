@@ -3,9 +3,12 @@ uvicorn[standard]>=0.35,<1.0
 pydantic-settings>=2.10,<3.0
 python-multipart>=0.0.20,<1.0
 supabase>=2.17,<3.0
+osmnx>=2.1,<3.0
+networkx>=3.5,<4.0
+pillow>=11.0,<12.0
+httpx>=0.28,<1.0
 
-# Add these when route calculation and AI inference are implemented.
-# osmnx>=2.0,<3.0
-# networkx>=3.5,<4.0
+# YOLOv8 model is still in training. Uncomment once services/api/models/best.pt
+# exists -- ai_service.py picks it up automatically without code changes.
 # torch
 # ultralytics
