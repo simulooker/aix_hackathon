@@ -1,20 +1,30 @@
 import * as ImagePicker from 'expo-image-picker';
+import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Image, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import { Image, SafeAreaView, StyleSheet, Text, View } from 'react-native';
 
-export default function ReportScreen() {
+import { PrimaryButton } from '@/src/components/PrimaryButton';
+import { useCurrentLocation } from '@/src/features/location/useCurrentLocation';
+
+export default function ReportCameraScreen() {
+  const router = useRouter();
+  const { coordinates, loading: locationLoading } = useCurrentLocation();
   const [imageUri, setImageUri] = useState<string>();
 
   const takePhoto = async () => {
     const permission = await ImagePicker.requestCameraPermissionsAsync();
     if (!permission.granted) return;
 
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ['images'],
-      quality: 0.8,
-    });
-
+    const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.8 });
     if (!result.canceled) setImageUri(result.assets[0].uri);
+  };
+
+  const goToResult = () => {
+    if (!imageUri || !coordinates) return;
+    router.push({
+      pathname: '/report/result',
+      params: { uri: imageUri, lat: String(coordinates.latitude), lng: String(coordinates.longitude) },
+    });
   };
 
   return (
@@ -32,15 +42,19 @@ export default function ReportScreen() {
         )}
       </View>
 
-      <Pressable style={styles.primaryButton} onPress={() => void takePhoto()}>
-        <Text style={styles.primaryButtonText}>카메라로 촬영하기</Text>
-      </Pressable>
-      <Pressable
-        style={[styles.submitButton, !imageUri && styles.disabledButton]}
-        disabled={!imageUri}>
-        <Text style={styles.submitButtonText}>신고 전송 준비</Text>
-      </Pressable>
-      <Text style={styles.hint}>서버 연결 후 사진·현재 위치·AI 판별 결과가 함께 저장됩니다.</Text>
+      {locationLoading && !coordinates && (
+        <Text style={styles.warning}>현재 위치를 확인하는 중입니다. 위치 권한을 허용해주세요.</Text>
+      )}
+
+      <PrimaryButton label="카메라로 촬영하기" onPress={() => void takePhoto()} />
+      <PrimaryButton
+        label="다음"
+        variant="dark"
+        onPress={goToResult}
+        disabled={!imageUri || !coordinates}
+        style={styles.nextButton}
+      />
+      <Text style={styles.hint}>다음 화면에서 사진과 위치를 함께 서버로 전송합니다.</Text>
     </SafeAreaView>
   );
 }
@@ -60,10 +74,7 @@ const styles = StyleSheet.create({
   },
   image: { width: '100%', height: '100%' },
   placeholder: { color: '#71817B' },
-  primaryButton: { backgroundColor: '#167C5A', borderRadius: 14, padding: 16, alignItems: 'center' },
-  primaryButtonText: { color: '#FFFFFF', fontWeight: '800' },
-  submitButton: { backgroundColor: '#14251F', borderRadius: 14, padding: 16, alignItems: 'center', marginTop: 12 },
-  disabledButton: { opacity: 0.35 },
-  submitButtonText: { color: '#FFFFFF', fontWeight: '800' },
+  warning: { color: '#8A6D00', fontSize: 13, marginBottom: 12 },
+  nextButton: { marginTop: 12 },
   hint: { color: '#71817B', fontSize: 12, lineHeight: 18, marginTop: 14, textAlign: 'center' },
 });

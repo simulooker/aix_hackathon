@@ -1,7 +1,9 @@
-import { Link } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
 
 export default function HomeScreen() {
+  const router = useRouter();
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.hero}>
@@ -13,24 +15,21 @@ export default function HomeScreen() {
       </View>
 
       <View style={styles.cards}>
-        <Link href="/map" asChild>
-          <Pressable style={[styles.card, styles.primaryCard]}>
-            <Text style={styles.primaryTitle}>내 주변 지도 보기</Text>
-            <Text style={styles.primaryBody}>현재 위치와 주변 위험 정보를 확인합니다.</Text>
-          </Pressable>
-        </Link>
-        <Link href="/report" asChild>
-          <Pressable style={styles.card}>
-            <Text style={styles.cardTitle}>위험 요소 신고하기</Text>
-            <Text style={styles.cardBody}>사진과 위치를 이용해 빠르게 제보합니다.</Text>
-          </Pressable>
-        </Link>
+        <Pressable style={[styles.card, styles.primaryCard]} onPress={() => router.push('/map')}>
+          <Text style={styles.primaryTitle}>내 주변 지도 보기</Text>
+          <Text style={styles.primaryBody}>현재 위치와 주변 위험 정보를 확인합니다.</Text>
+        </Pressable>
+        <Pressable style={styles.card} onPress={() => router.push('/report/camera')}>
+          <Text style={styles.cardTitle}>위험 요소 신고하기</Text>
+          <Text style={styles.cardBody}>사진과 위치를 이용해 빠르게 제보합니다.</Text>
+        </Pressable>
       </View>
 
       <View style={styles.notice}>
         <Text style={styles.noticeTitle}>개발 안내</Text>
         <Text style={styles.noticeBody}>
-          현재는 프로젝트 골격 단계입니다. 다음 단계에서 경로 탐색과 AI 판별을 연결합니다.
+          신고 접수는 서버와 연결되어 있습니다. 주변 위험 지도와 실제 경로 계산은 백엔드
+          작업이 끝나는 대로 자동으로 채워집니다.
         </Text>
       </View>
     </SafeAreaView>
