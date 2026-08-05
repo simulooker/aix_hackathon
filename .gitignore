@@ -14,6 +14,8 @@ web-build/
 __pycache__/
 *.py[cod]
 .venv/
+venv/
+*-env/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
@@ -21,6 +23,11 @@ __pycache__/
 # AI model weights (store these outside Git)
 *.pt
 *.pth
+*.onnx
+*.engine
+*.tflite
+*.torchscript
+*.mlmodel
 services/api/models/*
 !services/api/models/.gitkeep
 
@@ -33,3 +40,33 @@ Thumbs.db
 # Test and build output
 coverage/
 build/
+tmp/
+results/
+runs/
+outputs/
+logs/
+*.log
+
+# Local AI training data
+datasets/
+
+# Large downloaded archives and split files
+*.zip
+*.zip.part*
+*.tar
+*.tar.gz
+*.tgz
+
+# Local-only utility and training scripts
+/scripts/
+
+# Local service and deployment state
+.supabase/
+.eas/
+
+# Credentials and private keys
+*.pem
+*.key
+credentials.json
+google-services.json
+GoogleService-Info.plist
