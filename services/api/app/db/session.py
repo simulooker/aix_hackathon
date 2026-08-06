@@ -1,9 +1,14 @@
-from app.core.config import settings
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
-# ⬇️ settings.DATABASE_URL 을 settings.database_url 로 변경!
-engine = create_engine(settings.database_url)
+from app.core.config import settings
+
+connect_args = (
+    {"check_same_thread": False}
+    if settings.database_url.startswith("sqlite")
+    else {}
+)
+engine = create_engine(settings.database_url, connect_args=connect_args)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 

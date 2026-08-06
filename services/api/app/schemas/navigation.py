@@ -16,3 +16,7 @@ class RouteResponse(BaseModel):
     route_id: str
     status: str
     message: str
+    geometry: list[Point]
+    distance_m: float
+    hazards_avoided: int
+    used_fallback_graph: bool

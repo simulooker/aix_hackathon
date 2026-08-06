@@ -1,59 +1,86 @@
-# AI 안심길 안내
+# AI 안전길
 
-보행 중 발견되는 위험 요소를 사진으로 신고하고, AI 분석 결과와 공간 데이터를
-활용해 더 안전한 이동 경로를 안내하는 해커톤 프로젝트입니다.
+보행로 사진을 AI로 분석하고 주변 위험정보와 안전 경로를 안내하는 Expo + FastAPI 프로젝트입니다.
 
-## 저장소 구성
+## 구성
 
 - `apps/mobile`: React Native, Expo Router, TypeScript 모바일 앱
-- `services/api`: FastAPI, YOLO, OSMnx, NetworkX 서버
+- `services/api`: FastAPI 인증·AI 분석·경로 API
 - `supabase`: PostgreSQL/PostGIS 마이그레이션
-- `docs`: 구조, API, 데이터베이스 문서
+- `docs`: 구조와 API 문서
 
-## 시작하기
-
-### 모바일 앱
+## 1. 모바일 앱 실행
 
 ```powershell
 npm install
-Copy-Item .env.example .env
+Copy-Item apps/mobile/.env.example apps/mobile/.env
 npm run mobile
 ```
 
-Expo Go에서 QR 코드를 스캔하거나 Android 에뮬레이터를 사용합니다. 실제 휴대폰에서
-서버에 접속할 때는 `EXPO_PUBLIC_API_URL`의 `localhost`를 개발 PC의 내부 IP 주소로
-변경해야 합니다.
+휴대폰의 Expo Go를 사용할 때는 `apps/mobile/.env`의 주소를 개발 PC의 내부 IP로 바꿔야 합니다.
 
-### API 서버
+```env
+EXPO_PUBLIC_API_URL=http://192.168.0.10:8000
+```
 
-Python 3.12 설치 후 아래 명령을 실행합니다.
+Android 에뮬레이터에서는 보통 `http://10.0.2.2:8000`을 사용합니다.
+
+## 2. API 서버 실행
+
+Python 3.10 이상이 필요합니다.
 
 ```powershell
 cd services/api
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-pip install -r requirements-dev.txt
+python -m pip install -r requirements-dev.txt
 Copy-Item .env.example .env
-uvicorn app.main:app --reload
+uvicorn app.main:app --reload --host 0.0.0.0
 ```
 
-- API 상태: `http://localhost:8000/health`
+- 상태 확인: `http://localhost:8000/health`
 - API 문서: `http://localhost:8000/docs`
+- 로컬 DB: `services/api/local.db`
 
-## 첫 개발 순서
+## 3. AI 모델 연결
 
-1. 모바일 앱에서 현재 위치 표시
-2. 사진 선택 또는 촬영
-3. FastAPI로 신고 전송
-4. Supabase Storage와 PostGIS 저장
-5. YOLO 분석 연결
-6. OSMnx/NetworkX 경로 계산 연결
-7. 지도 경로 및 음성 안내
+모델 파일은 GitHub에 올리지 않습니다. 다음 이름으로 로컬 API 폴더에 복사합니다.
 
-## 브랜치 규칙
+```text
+services/api/models/surface-seg-best.pt
+services/api/models/obstacle-detect-best.pt
+```
 
-- `main`: 항상 실행 가능한 코드
+서버에서 내려받는 예시:
+
+```powershell
+scp -P 10000 jn_hack15@155.230.135.209:/abr/jn_hack15/results/surface-seg-v2/weights/best.pt services/api/models/surface-seg-best.pt
+scp -P 10000 jn_hack15@155.230.135.209:/abr/jn_hack15/results/obstacle-detect-v1/weights/best.pt services/api/models/obstacle-detect-best.pt
+```
+
+GPU 서버에서는 `.env`의 값을 다음처럼 바꿉니다.
+
+```env
+AI_DEVICE=0
+```
+
+모델이 없으면 앱의 다른 기능은 실행되지만 사진 분석 API는 `503`과 함께 누락된 모델 경로를 알려줍니다.
+
+## 현재 동작하는 흐름
+
+1. 회원가입과 로그인(SQLite 개발 DB)
+2. 현재 위치 지도 표시와 목적지 선택
+3. 개발용 기본 경로 및 음성 안내
+4. 카메라 촬영 또는 앨범 사진 선택
+5. 보행로 세그멘테이션 + 장애물 탐지
+6. 보행로 위 장애물, 차단 비율, 위험도 표시
+
+실제 OSMnx 경로 계산, Supabase 신고 저장, 운영 배포 설정은 다음 개발 단계입니다.
+
+## Git 규칙
+
+- `main`: 실행 가능한 통합 코드
 - `feature/기능명`: 기능 개발
 - `fix/문제명`: 버그 수정
 
-커밋 예시: `feat: 현재 위치 지도 표시`
+모델, 데이터셋, `.env`, 개인 키는 `.gitignore`에 의해 제외됩니다.

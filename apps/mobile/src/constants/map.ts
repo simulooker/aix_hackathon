@@ -10,5 +10,5 @@ export const DEFAULT_REGION = {
 export const ROUTE_PROFILES: { value: RouteProfile; label: string }[] = [
   { value: 'general', label: '일반' },
   { value: 'elderly', label: '고령 보행자' },
-  { value: 'wheelchair', label: '전동 휠체어' },
+  { value: 'wheelchair', label: '휠체어' },
 ];

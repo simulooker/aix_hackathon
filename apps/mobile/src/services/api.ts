@@ -1,15 +1,74 @@
 import { env } from '@/src/constants/env';
-import type { HazardReport, ReportResponse } from '@/src/types/hazard';
+import type { AIAnalysisResponse, HazardReport, ReportResponse } from '@/src/types/hazard';
 import type { RoutePoint, RouteProfile, RouteResponse } from '@/src/types/route';
 
-export type HealthResponse = {
-  status: string;
-  environment: string;
-};
+let accessToken: string | undefined;
 
-export async function getHealth(): Promise<HealthResponse> {
-  const response = await fetch(`${env.apiUrl}/health`);
-  if (!response.ok) throw new Error('서버 상태를 확인할 수 없습니다.');
+async function errorMessage(response: Response): Promise<string> {
+  try {
+    const payload = (await response.json()) as { detail?: string };
+    return payload.detail ?? `요청에 실패했습니다. (${response.status})`;
+  } catch {
+    return `요청에 실패했습니다. (${response.status})`;
+  }
+}
+
+export function setAccessToken(token?: string) {
+  accessToken = token;
+}
+
+export async function login(username: string, password: string): Promise<string> {
+  const body = new URLSearchParams({ username, password });
+  const response = await fetch(`${env.apiUrl}/api/v1/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: body.toString(),
+  });
+  if (!response.ok) throw new Error(await errorMessage(response));
+  const result = (await response.json()) as { access_token: string };
+  setAccessToken(result.access_token);
+  return result.access_token;
+}
+
+export async function sendEmailOtp(email: string): Promise<void> {
+  const response = await fetch(`${env.apiUrl}/api/v1/send-otp`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
+  });
+  if (!response.ok) throw new Error(await errorMessage(response));
+}
+
+export async function verifyEmailOtp(email: string, code: string): Promise<void> {
+  const response = await fetch(`${env.apiUrl}/api/v1/verify-otp`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, code }),
+  });
+  if (!response.ok) throw new Error(await errorMessage(response));
+}
+
+export async function register(params: { username: string; password: string; email: string }) {
+  const response = await fetch(`${env.apiUrl}/api/v1/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  if (!response.ok) throw new Error(await errorMessage(response));
+  return response.json();
+}
+
+export async function analyzePhoto(photoUri: string): Promise<AIAnalysisResponse> {
+  const filename = photoUri.split('/').pop() ?? 'photo.jpg';
+  const ext = filename.split('.').pop()?.toLowerCase() ?? 'jpg';
+  const form = new FormData();
+  form.append('image', {
+    uri: photoUri,
+    name: filename,
+    type: `image/${ext === 'jpg' ? 'jpeg' : ext}`,
+  } as unknown as Blob);
+  const response = await fetch(`${env.apiUrl}/api/v1/detections`, { method: 'POST', body: form });
+  if (!response.ok) throw new Error(await errorMessage(response));
   return response.json();
 }
 
@@ -20,28 +79,18 @@ export async function submitReport(params: {
 }): Promise<ReportResponse> {
   const form = new FormData();
   const filename = params.photoUri.split('/').pop() ?? 'photo.jpg';
-  const match = /\.(\w+)$/.exec(filename);
-  const ext = match ? match[1].toLowerCase() : 'jpg';
-
-  form.append('image', {
-    uri: params.photoUri,
-    name: filename,
-    type: `image/${ext === 'jpg' ? 'jpeg' : ext}`,
-  } as unknown as Blob);
+  form.append('image', { uri: params.photoUri, name: filename, type: 'image/jpeg' } as unknown as Blob);
   form.append('latitude', String(params.latitude));
   form.append('longitude', String(params.longitude));
-
   const response = await fetch(`${env.apiUrl}/api/v1/reports`, {
     method: 'POST',
     body: form,
-    headers: { 'Content-Type': 'multipart/form-data' },
+    headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
   });
-  if (!response.ok) throw new Error('신고를 전송하지 못했습니다.');
+  if (!response.ok) throw new Error(await errorMessage(response));
   return response.json();
 }
 
-// 백엔드에 아직 구현되지 않은 엔드포인트입니다 (services/api/app/api/routes/reports.py 참고).
-// 배포되기 전까지는 빈 배열로 처리되어 지도 화면이 조용히 비워집니다.
 export async function getNearbyHazards(params: {
   latitude: number;
   longitude: number;
@@ -52,13 +101,12 @@ export async function getNearbyHazards(params: {
     lon: String(params.longitude),
     radius_m: String(params.radiusM ?? 800),
   });
-  const response = await fetch(`${env.apiUrl}/api/v1/reports/nearby?${search.toString()}`);
-  if (!response.ok) throw new Error('주변 위험 정보를 불러오지 못했습니다.');
+  const response = await fetch(`${env.apiUrl}/api/v1/reports/nearby?${search}`);
+  if (response.status === 404) return [];
+  if (!response.ok) throw new Error(await errorMessage(response));
   return response.json();
 }
 
-// 백엔드가 아직 프로필 가중치 A* 라우팅을 구현하기 전까지 geometry가 없는 임시 응답을
-// 돌려줄 수 있습니다. 호출부에서 route.geometry.length를 확인하고 처리하세요.
 export async function requestRoute(params: {
   origin: RoutePoint;
   destination: RoutePoint;
@@ -70,9 +118,9 @@ export async function requestRoute(params: {
     body: JSON.stringify({
       origin: params.origin,
       destination: params.destination,
-      profile: params.profile,
+      prefer_safe_route: params.profile !== 'general',
     }),
   });
-  if (!response.ok) throw new Error('안심 경로를 계산하지 못했습니다.');
+  if (!response.ok) throw new Error(await errorMessage(response));
   return response.json();
 }

@@ -4,14 +4,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.router import api_router
 from app.core.config import settings
 from app.db.session import Base, engine
+from app.models.user import User  # noqa: F401
 
-# 서버 실행 시 DB 테이블 자동 생성 (users 테이블 포함)
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
-    title="AI 안심길 API",
-    description="위험 요소 신고, AI 판별, 안전 경로 계산 API",
+    title="AI Safe Route API",
     version="0.1.0",
+    description="보행 안전 경로 추천 및 위험 요소 분석 API",
 )
 
 app.add_middleware(
@@ -25,6 +25,6 @@ app.add_middleware(
 app.include_router(api_router)
 
 
-@app.get("/health", tags=["system"])
-async def health() -> dict[str, str]:
+@app.get("/health")
+def health_check():
     return {"status": "ok", "environment": settings.environment}

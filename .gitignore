@@ -63,6 +63,11 @@ datasets/
 # Local service and deployment state
 .supabase/
 .eas/
+services/api/local.db
+services/api/Ultralytics/
+services/api/.matplotlib/
+*.sqlite
+*.sqlite3
 
 # Credentials and private keys
 *.pem
