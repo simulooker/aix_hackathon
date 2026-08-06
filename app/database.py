@@ -1,8 +1,8 @@
 import os
-import re
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, declarative_base
+
 from dotenv import load_dotenv
+from sqlalchemy import create_engine
+from sqlalchemy.orm import declarative_base, sessionmaker
 
 # .env 파일 우선 로드
 load_dotenv(override=True)

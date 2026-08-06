@@ -1,7 +1,6 @@
+from app.core.config import settings
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
-
-from app.core.config import settings
 
 # ⬇️ settings.DATABASE_URL 을 settings.database_url 로 변경!
 engine = create_engine(settings.database_url)

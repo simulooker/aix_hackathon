@@ -1,7 +1,6 @@
 import os
 import re
 from datetime import datetime, timedelta, timezone
-from typing import Dict, Optional
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, status
@@ -65,7 +64,7 @@ def get_db():
 # ==========================================
 # username별 실패 횟수 및 잠금 해제 시간 저장
 # 구조: {"username": {"count": 3, "lock_until": datetime}}
-FAILED_ATTEMPTS: Dict[str, dict] = {}
+FAILED_ATTEMPTS: dict[str, dict] = {}
 
 MAX_FAILED_ATTEMPTS = 5  # 최대 허용 실패 횟수
 LOCKOUT_MINUTES = 15  # 차단 시간 (15분)
@@ -109,7 +108,7 @@ def validate_password_strength(password: str) -> str:
 class UserRegister(BaseModel):
     username: str
     password: str
-    email: Optional[EmailStr] = None
+    email: EmailStr | None = None
 
     @field_validator("password")
     @classmethod
@@ -130,7 +129,7 @@ class PasswordChange(BaseModel):
 class UserResponse(BaseModel):
     id: int
     username: str
-    email: Optional[str] = None
+    email: str | None = None
 
     class Config:
         from_attributes = True
@@ -152,7 +151,7 @@ def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
 
 
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
+def create_access_token(data: dict, expires_delta: timedelta | None = None):
     to_encode = data.copy()
     expire = datetime.now(timezone.utc) + (
         expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)

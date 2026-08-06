@@ -1,6 +1,7 @@
-from fastapi import FastAPI, Depends, HTTPException
-from sqlalchemy.orm import Session
+from fastapi import Depends, FastAPI, HTTPException
 from sqlalchemy import text
+from sqlalchemy.orm import Session
+
 from app.database import get_db
 
 app = FastAPI(title="Barrier-Free Map API")
@@ -23,4 +24,4 @@ def db_health_check(db: Session = Depends(get_db)):
             "postgis_version": result[0]
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"DB 연결 실패: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"DB 연결 실패: {e!s}")

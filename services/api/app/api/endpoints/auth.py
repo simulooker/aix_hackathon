@@ -1,9 +1,5 @@
 import random
 from datetime import datetime, timedelta, timezone
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordRequestForm
-from fastapi_mail import ConnectionConfig, FastMail, MessageSchema, MessageType
-from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.security import (
@@ -25,6 +21,10 @@ from app.schemas.auth import (
     UserResponse,
     VerifyOTPRequest,
 )
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordRequestForm
+from fastapi_mail import ConnectionConfig, FastMail, MessageSchema, MessageType
+from sqlalchemy.orm import Session
 
 router = APIRouter()
 
@@ -82,7 +82,7 @@ async def send_otp(request: EmailRequest):
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"이메일 발송 실패: {str(e)}",
+            detail=f"이메일 발송 실패: {e!s}",
         )
 
 

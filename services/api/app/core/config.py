@@ -1,5 +1,5 @@
 from functools import lru_cache
-from typing import Optional
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -9,8 +9,8 @@ class Settings(BaseSettings):
     # --------------------------------------------------
     environment: str = "development"
     cors_origins: list[str] = ["http://localhost:8081", "http://localhost:19006"]
-    supabase_url: Optional[str] = None
-    supabase_service_role_key: Optional[str] = None
+    supabase_url: str | None = None
+    supabase_service_role_key: str | None = None
     model_path: str = "models/best.pt"
 
     # --------------------------------------------------
@@ -26,8 +26,8 @@ class Settings(BaseSettings):
     # --------------------------------------------------
     smtp_host: str = "smtp.gmail.com"  # .env의 SMTP_HOST 읽음 (기본값 제공)
     smtp_port: int = 587              # .env의 SMTP_PORT 읽음
-    smtp_user: Optional[str] = None   # .env의 SMTP_USER 읽음
-    smtp_password: Optional[str] = None  # .env의 SMTP_PASSWORD 읽음
+    smtp_user: str | None = None   # .env의 SMTP_USER 읽음
+    smtp_password: str | None = None  # .env의 SMTP_PASSWORD 읽음
 
     # .env 파일 로드 설정 (정의되지 않은 extra 변수는 무시, 대소문자 구별 안함)
     model_config = SettingsConfigDict(

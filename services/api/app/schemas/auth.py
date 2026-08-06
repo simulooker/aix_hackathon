@@ -1,5 +1,5 @@
 import re
-from typing import Optional
+
 from pydantic import BaseModel, EmailStr, field_validator
 
 
@@ -16,7 +16,7 @@ def validate_password_strength(password: str) -> str:
 class UserRegister(BaseModel):
     username: str
     password: str
-    email: Optional[EmailStr] = None
+    email: EmailStr | None = None
 
     @field_validator("password")
     @classmethod
@@ -37,7 +37,7 @@ class PasswordChange(BaseModel):
 class UserResponse(BaseModel):
     id: int
     username: str
-    email: Optional[str] = None
+    email: str | None = None
 
     class Config:
         from_attributes = True
