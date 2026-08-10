@@ -106,6 +106,10 @@ def register(user_data: UserRegister, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="이미 사용 중인 사용자 이름입니다.")
     if db.query(User).filter(User.email == email).first():
         raise HTTPException(status_code=400, detail="이미 가입된 이메일입니다.")
+    
+    # 🎯 추가: 새로 회원가입하는 아이디의 이전 실패/잠금 기록 삭제
+    FAILED_ATTEMPTS.pop(user_data.username, None)
+
     user = User(
         username=user_data.username,
         email=email,
@@ -167,6 +171,9 @@ def update_password(
 
 @router.delete("/users/me")
 def delete_user(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    # 🎯 추가: 계정 삭제 시 메모리에 남은 실패/잠금 기록 삭제
+    FAILED_ATTEMPTS.pop(current_user.username, None)
+
     db.delete(current_user)
     db.commit()
     return {"message": "계정이 삭제되었습니다."}

@@ -1,35 +1,44 @@
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import bcrypt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.session import get_db
 
-# ⬇️ auth.py에서 dict로 사용하므로 빈 딕셔너리로 선언해야 합니다!
+# auth.py에서 로그인 실패 제한 관리에 사용하는 변수
 FAILED_ATTEMPTS: dict[str, dict[str, Any]] = {}
 MAX_FAILED_ATTEMPTS = 5
 LOCKOUT_MINUTES = 15
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/login")
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
+    """평문 비밀번호와 해시된 비밀번호 검증 (72바이트 초과 처리 및 bcrypt 직접 사용)"""
+    try:
+        pwd_bytes = plain_password.encode('utf-8')[:72]
+        hash_bytes = hashed_password.encode('utf-8')
+        return bcrypt.checkpw(pwd_bytes, hash_bytes)
+    except Exception:
+        return False
 
 
 def get_password_hash(password: str) -> str:
-    return pwd_context.hash(password)
+    """비밀번호 암호화 (bcrypt 직접 사용)"""
+    pwd_bytes = password.encode('utf-8')[:72]
+    salt = bcrypt.gensalt()
+    return bcrypt.hashpw(pwd_bytes, salt).decode('utf-8')
 
 
 def create_access_token(
     data: dict[str, Any], expires_delta: timedelta | None = None
 ) -> str:
+    """JWT 액세스 토큰 생성"""
     to_encode = data.copy()
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta
@@ -48,6 +57,7 @@ def create_access_token(
 def get_current_user(
     token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)
 ):
+    """현재 로그인한 사용자 인증 및 사용자 객체 반환"""
     from app.models.user import User  # 순환 임포트 방지
 
     credentials_exception = HTTPException(
