@@ -2,19 +2,19 @@ import { env } from '@/src/constants/env';
 import type { AIAnalysisResponse, HazardReport, ReportResponse } from '@/src/types/hazard';
 import type { RoutePoint, RouteProfile, RouteResponse } from '@/src/types/route';
 
-// 💡 백엔드 라우터 prefix인 /api/v1을 기본 URL 끝에 포함하도록 설정
-const API_BASE_URL = (env.apiUrl && !env.apiUrl.includes('localhost'))
-  ? (env.apiUrl.endsWith('/api/v1') ? env.apiUrl : `${env.apiUrl}/api/v1`)
-  : 'http://192.168.219.105:8000/api/v1';
+const normalizedApiUrl = env.apiUrl.replace(/\/$/, '');
+const API_BASE_URL = normalizedApiUrl.endsWith('/api/v1')
+  ? normalizedApiUrl
+  : `${normalizedApiUrl}/api/v1`;
 
 let accessToken: string | undefined;
 
 async function errorMessage(response: Response): Promise<string> {
   try {
     const payload = (await response.json()) as { detail?: string };
-    return payload.detail ?? `요청에 실패했습니다. (${response.status})`;
+    return payload.detail ?? `요청을 처리하지 못했습니다. (${response.status})`;
   } catch {
-    return `요청에 실패했습니다. (${response.status})`;
+    return `요청을 처리하지 못했습니다. (${response.status})`;
   }
 }
 
@@ -77,11 +77,7 @@ export async function analyzePhoto(photoUri: string): Promise<AIAnalysisResponse
   return response.json();
 }
 
-export async function submitReport(params: {
-  photoUri: string;
-  latitude: number;
-  longitude: number;
-}): Promise<ReportResponse> {
+export async function submitReport(params: { photoUri: string; latitude: number; longitude: number }): Promise<ReportResponse> {
   const form = new FormData();
   const filename = params.photoUri.split('/').pop() ?? 'photo.jpg';
   form.append('image', { uri: params.photoUri, name: filename, type: 'image/jpeg' } as unknown as Blob);
@@ -96,11 +92,7 @@ export async function submitReport(params: {
   return response.json();
 }
 
-export async function getNearbyHazards(params: {
-  latitude: number;
-  longitude: number;
-  radiusM?: number;
-}): Promise<HazardReport[]> {
+export async function getNearbyHazards(params: { latitude: number; longitude: number; radiusM?: number }): Promise<HazardReport[]> {
   const search = new URLSearchParams({
     lat: String(params.latitude),
     lon: String(params.longitude),
@@ -112,11 +104,7 @@ export async function getNearbyHazards(params: {
   return response.json();
 }
 
-export async function requestRoute(params: {
-  origin: RoutePoint;
-  destination: RoutePoint;
-  profile: RouteProfile;
-}): Promise<RouteResponse> {
+export async function requestRoute(params: { origin: RoutePoint; destination: RoutePoint; profile: RouteProfile }): Promise<RouteResponse> {
   const response = await fetch(`${API_BASE_URL}/routes`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

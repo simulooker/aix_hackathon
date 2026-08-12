@@ -14,7 +14,8 @@ type RouteState = {
 };
 
 export const useRouteStore = create<RouteState>((set, get) => ({
-  profile: 'general', loading: false,
+  profile: 'general',
+  loading: false,
   setProfile: (profile) => set({ profile }),
   fetchRoute: async (origin, destination) => {
     set({ loading: true, error: undefined });
