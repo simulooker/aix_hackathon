@@ -14,7 +14,9 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt \
+    && pip uninstall -y opencv-python \
+    && pip install --no-cache-dir --force-reinstall "opencv-python-headless>=4.8,<5.0"
 
 COPY app ./app
 COPY models ./models
