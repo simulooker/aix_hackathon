@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import FontAwesome5 from '@expo/vector-icons/FontAwesome5';
 import * as Location from 'expo-location';
 import type { Href } from 'expo-router';
 import { useRouter } from 'expo-router';
@@ -23,9 +24,11 @@ import { useAuthStore } from '@/src/stores/auth-store';
 import { useRouteStore } from '@/src/stores/route-store';
 import type { HazardReport } from '@/src/types/hazard';
 import type { RoutePoint } from '@/src/types/route';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function MapScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const username = useAuthStore((state) => state.username);
   const { coordinates, error, loading, refresh } = useCurrentLocation();
   const { profile, setProfile, fetchRoute, loading: routeLoading, error: routeError } = useRouteStore();
@@ -89,7 +92,7 @@ export default function MapScreen() {
       />
 
       <SafeAreaView style={styles.topArea} pointerEvents="box-none">
-        <View style={styles.topRow}>
+        <View style={[styles.topRow, { paddingTop: insets.top + 10 }]}>
           <View style={styles.searchBox}>
             <Ionicons name="search" size={20} color="#52645E" />
             <TextInput
@@ -118,7 +121,7 @@ export default function MapScreen() {
         {searchError && <Text style={styles.searchError}>{searchError}</Text>}
       </SafeAreaView>
 
-      <View style={styles.panel}>
+      <View style={[styles.panel, { bottom: insets.bottom + 12 }]}>
         <View style={styles.panelHeader}>
           <View>
             <Text style={styles.title}>이용자 유형</Text>
@@ -137,11 +140,15 @@ export default function MapScreen() {
                 key={item.value}
                 style={[styles.profileCard, selected && styles.profileCardActive]}
                 onPress={() => setProfile(item.value)}>
-                <Ionicons
-                  name={item.value === 'wheelchair' ? 'accessibility' : item.value === 'elderly' ? 'walk' : 'person-outline'}
-                  size={21}
-                  color={selected ? '#FFFFFF' : '#167C5A'}
-                />
+                {item.value === 'general' ? (
+                  <Ionicons name="person-outline" size={21} color={selected ? '#FFFFFF' : '#167C5A'} />
+                ) : (
+                  <FontAwesome5
+                    name={item.value === 'elderly' ? 'blind' : 'wheelchair'}
+                    size={20}
+                    color={selected ? '#FFFFFF' : '#167C5A'}
+                  />
+                )}
                 <Text style={[styles.profileLabel, selected && styles.profileLabelActive]}>{item.label}</Text>
                 <Text style={[styles.profileDescription, selected && styles.profileDescriptionActive]}>{item.description}</Text>
               </Pressable>

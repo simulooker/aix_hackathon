@@ -103,6 +103,7 @@ class AIService:
         mask = self._mask(surface, *image.shape[:2])
         detections: list[dict[str, Any]] = []
         if obstacles.boxes is not None:
+            height, width = image.shape[:2]
             for box, class_id, confidence in zip(
                 obstacles.boxes.xyxy.int().cpu().tolist(),
                 obstacles.boxes.cls.int().cpu().tolist(),
@@ -114,6 +115,12 @@ class AIService:
                 detections.append({
                     "label": label,
                     "confidence": round(float(confidence), 4),
+                    "box": (
+                        round(box[0] / width, 5),
+                        round(box[1] / height, 5),
+                        round(box[2] / width, 5),
+                        round(box[3] / height, 5),
+                    ),
                     "blocked_walkway_ratio": round(blocked, 4),
                     "remaining_walkway_image_ratio": round(remaining, 4),
                     "on_walkway": on_walkway,

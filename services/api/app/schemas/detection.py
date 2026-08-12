@@ -8,6 +8,7 @@ RiskLevel = Literal["none", "low", "medium", "high"]
 class Detection(BaseModel):
     label: str
     confidence: float
+    box: tuple[float, float, float, float]
     blocked_walkway_ratio: float
     remaining_walkway_image_ratio: float
     on_walkway: bool

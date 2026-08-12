@@ -26,6 +26,7 @@ export type ReportResponse = {
 export type AIDetection = {
   label: string;
   confidence: number;
+  box: [number, number, number, number];
   blocked_walkway_ratio: number;
   remaining_walkway_image_ratio: number;
   on_walkway: boolean;

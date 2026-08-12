@@ -37,8 +37,10 @@ export default function LoginScreen() {
       </View>
       <Text style={styles.title}>로그인</Text>
       <Text style={styles.description}>계정에 로그인하고 안전 경로 서비스를 이용하세요.</Text>
-      <TextInput value={username} onChangeText={setUsername} placeholder="아이디" autoCapitalize="none" style={styles.input} />
-      <TextInput value={password} onChangeText={setPassword} placeholder="비밀번호" secureTextEntry style={styles.input} />
+      <Text style={styles.label}>아이디</Text>
+      <TextInput value={username} onChangeText={setUsername} placeholder="아이디를 입력해 주세요" autoCapitalize="none" style={styles.input} />
+      <Text style={styles.label}>비밀번호</Text>
+      <TextInput value={password} onChangeText={setPassword} placeholder="비밀번호를 입력해 주세요" secureTextEntry style={styles.input} />
       {error && <Text style={styles.error}>{error}</Text>}
       <PrimaryButton label="로그인" onPress={() => void submit()} loading={loading} disabled={!username || !password} />
       <Text style={styles.link} onPress={() => router.push('/register' as Href)}>계정이 없나요? 회원가입</Text>
@@ -53,6 +55,7 @@ const styles = StyleSheet.create({
   title: { fontSize: 30, fontWeight: '800', color: '#14251F', marginTop: 24 },
   description: { color: '#596A64', marginVertical: 16 },
   input: { backgroundColor: '#FFF', borderWidth: 1, borderColor: '#DCE7E2', borderRadius: 14, padding: 15, marginBottom: 12 },
+  label: { color: '#263D35', fontSize: 14, fontWeight: '700', marginBottom: 7 },
   error: { color: '#B42318', marginBottom: 12 },
   link: { color: '#167C5A', fontWeight: '700', textAlign: 'center', marginTop: 20 },
 });

@@ -58,13 +58,15 @@ export default function RegisterScreen() {
       <Text style={styles.title}>회원가입</Text>
       <Text style={styles.description}>이메일 인증 후 계정을 만들어 주세요.</Text>
 
+      <Text style={styles.label}>아이디</Text>
       <TextInput
         value={username}
         onChangeText={setUsername}
-        placeholder="아이디"
+        placeholder="사용할 아이디를 입력해 주세요"
         autoCapitalize="none"
         style={styles.input}
       />
+      <Text style={styles.label}>이메일</Text>
       <View style={styles.row}>
         <TextInput
           value={email}
@@ -72,7 +74,7 @@ export default function RegisterScreen() {
             setEmail(value);
             setVerified(false);
           }}
-          placeholder="이메일"
+          placeholder="인증할 이메일을 입력해 주세요"
           autoCapitalize="none"
           keyboardType="email-address"
           style={[styles.input, styles.flexInput]}
@@ -83,7 +85,9 @@ export default function RegisterScreen() {
       </View>
 
       {otpSent && (
-        <View style={styles.row}>
+        <View>
+          <Text style={styles.label}>이메일 인증번호</Text>
+          <View style={styles.row}>
           <TextInput
             value={code}
             onChangeText={setCode}
@@ -95,9 +99,11 @@ export default function RegisterScreen() {
           <TouchableOpacity style={styles.smallButton} onPress={() => void confirmOtp()} disabled={!code || loading}>
             <Text style={styles.smallButtonText}>확인</Text>
           </TouchableOpacity>
+          </View>
         </View>
       )}
 
+      <Text style={styles.label}>비밀번호</Text>
       <TextInput
         value={password}
         onChangeText={setPassword}
@@ -132,6 +138,7 @@ const styles = StyleSheet.create({
     padding: 15,
     marginBottom: 12,
   },
+  label: { color: '#263D35', fontSize: 14, fontWeight: '700', marginBottom: 7 },
   smallButton: {
     height: 50,
     paddingHorizontal: 14,

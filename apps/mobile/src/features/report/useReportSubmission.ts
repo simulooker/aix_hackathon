@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 
 import { analyzePhoto } from '@/src/services/api';
 import type { AIAnalysisResponse } from '@/src/types/hazard';
@@ -11,7 +11,7 @@ export type ReportSubmissionState =
 
 export function useReportSubmission() {
   const [state, setState] = useState<ReportSubmissionState>({ status: 'idle' });
-  const submit = async (photoUri: string) => {
+  const submit = useCallback(async (photoUri: string) => {
     setState({ status: 'submitting' });
     try {
       const result = await analyzePhoto(photoUri);
@@ -21,6 +21,6 @@ export function useReportSubmission() {
       setState({ status: 'error', message: error instanceof Error ? error.message : '분석에 실패했습니다.' });
       return undefined;
     }
-  };
+  }, []);
   return { state, submit, reset: () => setState({ status: 'idle' }) };
 }
