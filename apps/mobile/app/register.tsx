@@ -63,6 +63,7 @@ export default function RegisterScreen() {
         value={username}
         onChangeText={setUsername}
         placeholder="사용할 아이디를 입력해 주세요"
+        placeholderTextColor="#7A8984"
         autoCapitalize="none"
         style={styles.input}
       />
@@ -75,6 +76,7 @@ export default function RegisterScreen() {
             setVerified(false);
           }}
           placeholder="인증할 이메일을 입력해 주세요"
+          placeholderTextColor="#7A8984"
           autoCapitalize="none"
           keyboardType="email-address"
           style={[styles.input, styles.flexInput]}
@@ -92,6 +94,7 @@ export default function RegisterScreen() {
             value={code}
             onChangeText={setCode}
             placeholder="6자리 인증번호"
+            placeholderTextColor="#7A8984"
             keyboardType="number-pad"
             maxLength={6}
             style={[styles.input, styles.flexInput]}
@@ -108,6 +111,7 @@ export default function RegisterScreen() {
         value={password}
         onChangeText={setPassword}
         placeholder="비밀번호 (영문·숫자·특수문자 포함 8자 이상)"
+        placeholderTextColor="#7A8984"
         secureTextEntry
         style={styles.input}
       />
@@ -131,6 +135,7 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', gap: 8 },
   flexInput: { flex: 1 },
   input: {
+    color: '#14251F',
     backgroundColor: '#FFF',
     borderWidth: 1,
     borderColor: '#DCE7E2',

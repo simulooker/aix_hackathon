@@ -80,7 +80,16 @@ class AIService:
         if not on_walkway:
             return "none"
         if label == "motor_vehicle":
-            return "high"
+            # A vehicle is dangerous only when it meaningfully blocks the
+            # walkable area. A distant or roadside vehicle on a wide path
+            # should not make the whole scene high-risk.
+            if remaining and remaining < 0.08:
+                return "high"
+            if blocked >= 0.45:
+                return "high"
+            if blocked >= 0.20 or (remaining and remaining < 0.15):
+                return "medium"
+            return "low"
         if remaining and remaining < 0.10:
             return "medium" if label in {"person", "mobility_aid"} else "high"
         if label in {"person", "mobility_aid"}:
