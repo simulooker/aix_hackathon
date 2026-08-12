@@ -9,6 +9,11 @@ on:
       - ".github/workflows/mobile-check.yml"
   push:
     branches: [main]
+    paths:
+      - "apps/mobile/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/mobile-check.yml"
 
 jobs:
   check:
