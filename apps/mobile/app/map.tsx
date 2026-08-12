@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import type { Href } from 'expo-router';
 import { useRouter } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Keyboard,
@@ -13,9 +13,8 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import MapView, { Marker } from 'react-native-maps';
 
-import { HazardMarker } from '@/src/components/HazardMarker';
+import { KakaoMap } from '@/src/components/KakaoMap';
 import { PrimaryButton } from '@/src/components/PrimaryButton';
 import { DEFAULT_REGION, ROUTE_PROFILES } from '@/src/constants/map';
 import { useCurrentLocation } from '@/src/features/location/useCurrentLocation';
@@ -27,7 +26,6 @@ import type { RoutePoint } from '@/src/types/route';
 
 export default function MapScreen() {
   const router = useRouter();
-  const mapRef = useRef<MapView>(null);
   const username = useAuthStore((state) => state.username);
   const { coordinates, error, loading, refresh } = useCurrentLocation();
   const { profile, setProfile, fetchRoute, loading: routeLoading, error: routeError } = useRouteStore();
@@ -40,14 +38,12 @@ export default function MapScreen() {
   useEffect(() => {
     if (!coordinates) return;
     getNearbyHazards({ ...coordinates }).then(setHazards).catch(() => setHazards([]));
-    mapRef.current?.animateToRegion({ ...coordinates, latitudeDelta: 0.012, longitudeDelta: 0.012 }, 500);
   }, [coordinates]);
 
   const chooseDestination = (point: RoutePoint, label?: string) => {
     setDestination(point);
     if (label) setDestinationName(label);
     setSearchError(undefined);
-    mapRef.current?.animateToRegion({ ...point, latitudeDelta: 0.012, longitudeDelta: 0.012 }, 500);
   };
 
   const searchDestination = async () => {
@@ -83,16 +79,14 @@ export default function MapScreen() {
 
   return (
     <View style={styles.container}>
-      <MapView
-        ref={mapRef}
+      <KakaoMap
         style={styles.map}
-        initialRegion={DEFAULT_REGION}
-        showsUserLocation
-        showsMyLocationButton={false}
-        onPress={(event) => chooseDestination(event.nativeEvent.coordinate, '지도에서 선택한 위치')}>
-        {destination && <Marker coordinate={destination} title="목적지" pinColor="#14251F" />}
-        {hazards.map((hazard) => <HazardMarker key={hazard.id} hazard={hazard} />)}
-      </MapView>
+        center={destination ?? coordinates ?? DEFAULT_REGION}
+        currentLocation={coordinates}
+        destination={destination}
+        hazards={hazards}
+        onMapPress={(point) => chooseDestination(point, '지도에서 선택한 위치')}
+      />
 
       <SafeAreaView style={styles.topArea} pointerEvents="box-none">
         <View style={styles.topRow}>

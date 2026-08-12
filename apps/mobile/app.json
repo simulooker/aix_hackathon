@@ -30,6 +30,9 @@
       "permissions": [
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.RECORD_AUDIO"
       ]
     },
@@ -75,6 +78,12 @@
         "projectId": "a840ca99-6f78-4a97-9157-c266ea880c16"
       }
     },
-    "owner": "simulookers-team"
+    "owner": "simulookers-team",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/a840ca99-6f78-4a97-9157-c266ea880c16"
+    }
   }
 }

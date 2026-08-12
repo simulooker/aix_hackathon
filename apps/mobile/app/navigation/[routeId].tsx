@@ -1,7 +1,7 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView, StyleSheet, Text, View } from 'react-native';
-import MapView, { Marker, Polyline } from 'react-native-maps';
 
+import { KakaoMap } from '@/src/components/KakaoMap';
 import { PrimaryButton } from '@/src/components/PrimaryButton';
 import { useVoiceGuidance } from '@/src/features/navigation/useVoiceGuidance';
 import { useRouteStore } from '@/src/stores/route-store';
@@ -27,11 +27,13 @@ export default function NavigationScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <MapView style={styles.map} initialRegion={{ ...origin, latitudeDelta: 0.01, longitudeDelta: 0.01 }}>
-        <Polyline coordinates={route.geometry} strokeColor="#167C5A" strokeWidth={6} />
-        <Marker coordinate={origin} title="출발지" pinColor="#167C5A" />
-        <Marker coordinate={destination} title="목적지" pinColor="#14251F" />
-      </MapView>
+      <KakaoMap
+        style={styles.map}
+        center={origin}
+        currentLocation={origin}
+        destination={destination}
+        route={route.geometry}
+      />
       <View style={styles.panel}>
         <Text style={styles.title}>안전 경로 안내</Text>
         <Text style={styles.body}>거리 약 {Math.round(route.distance_m)}m · 회피한 위험 구간 {route.hazards_avoided}개</Text>
