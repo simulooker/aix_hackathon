@@ -1,16 +1,16 @@
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 RiskLevel = Literal["none", "low", "medium", "high"]
 
 
 class Detection(BaseModel):
     label: str
-    confidence: float
+    confidence: float = Field(ge=0, le=1)
     box: tuple[float, float, float, float]
-    blocked_walkway_ratio: float
-    remaining_walkway_image_ratio: float
+    blocked_walkway_ratio: float = Field(ge=0, le=1)
+    remaining_walkway_image_ratio: float = Field(ge=0, le=1)
     on_walkway: bool
     risk: RiskLevel
 

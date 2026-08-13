@@ -5,7 +5,9 @@ import httpx
 from app.core.config import settings
 
 
-async def upload_report_image(contents: bytes, content_type: str, filename: str | None) -> str | None:
+async def upload_report_image(
+    contents: bytes, content_type: str, filename: str | None
+) -> str | None:
     if not settings.supabase_url or not settings.supabase_service_role_key:
         return None
     extension = (filename or "photo.jpg").rsplit(".", 1)[-1].lower()
@@ -29,7 +31,11 @@ async def upload_report_image(contents: bytes, content_type: str, filename: str 
                     "apikey": settings.supabase_service_role_key,
                     "Content-Type": "application/json",
                 },
-                json={"id": settings.supabase_report_bucket, "name": settings.supabase_report_bucket, "public": False},
+                json={
+                    "id": settings.supabase_report_bucket,
+                    "name": settings.supabase_report_bucket,
+                    "public": False,
+                },
             )
             if bucket_response.is_success or bucket_response.status_code == 409:
                 response = await client.post(url, headers=headers, content=contents)

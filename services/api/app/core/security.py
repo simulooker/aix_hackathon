@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Annotated, Any
 
 import bcrypt
 from fastapi import Depends, HTTPException, status
@@ -21,18 +21,18 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/login")
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """평문 비밀번호와 해시된 비밀번호 검증 (72바이트 초과 처리 및 bcrypt 직접 사용)"""
     try:
-        pwd_bytes = plain_password.encode('utf-8')[:72]
-        hash_bytes = hashed_password.encode('utf-8')
+        pwd_bytes = plain_password.encode()[:72]
+        hash_bytes = hashed_password.encode()
         return bcrypt.checkpw(pwd_bytes, hash_bytes)
-    except Exception:
+    except (TypeError, ValueError):
         return False
 
 
 def get_password_hash(password: str) -> str:
     """비밀번호 암호화 (bcrypt 직접 사용)"""
-    pwd_bytes = password.encode('utf-8')[:72]
+    pwd_bytes = password.encode()[:72]
     salt = bcrypt.gensalt()
-    return bcrypt.hashpw(pwd_bytes, salt).decode('utf-8')
+    return bcrypt.hashpw(pwd_bytes, salt).decode()
 
 
 def create_access_token(
@@ -55,7 +55,8 @@ def create_access_token(
 
 
 def get_current_user(
-    token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)
+    token: Annotated[str, Depends(oauth2_scheme)],
+    db: Annotated[Session, Depends(get_db)],
 ):
     """현재 로그인한 사용자 인증 및 사용자 객체 반환"""
     from app.models.user import User  # 순환 임포트 방지

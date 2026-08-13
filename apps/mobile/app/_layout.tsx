@@ -1,8 +1,13 @@
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { useEffect } from 'react';
 import 'react-native-reanimated';
 
+import { useAuthStore } from '@/src/stores/auth-store';
+
 export default function RootLayout() {
+  const initializeAuth = useAuthStore((state) => state.initialize);
+  useEffect(() => { void initializeAuth(); }, [initializeAuth]);
   return (
     <>
       <Stack screenOptions={{ headerStyle: { backgroundColor: '#F7FAF8' }, headerTitleStyle: { fontWeight: '700' } }}>

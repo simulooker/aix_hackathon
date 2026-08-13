@@ -1,5 +1,7 @@
-import random
+import hashlib
+import secrets
 from datetime import datetime, timedelta, timezone
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
@@ -17,7 +19,7 @@ from app.core.security import (
     verify_password,
 )
 from app.db.session import get_db
-from app.models.user import User
+from app.models.user import EmailVerification, User
 from app.schemas.auth import (
     EmailRequest,
     PasswordChange,
@@ -28,7 +30,14 @@ from app.schemas.auth import (
 )
 
 router = APIRouter()
-otp_store: dict[str, dict[str, object]] = {}
+DatabaseSession = Annotated[Session, Depends(get_db)]
+LoginForm = Annotated[OAuth2PasswordRequestForm, Depends()]
+AuthenticatedUser = Annotated[User, Depends(get_current_user)]
+
+
+def otp_hash(email: str, code: str) -> str:
+    value = f"{settings.secret_key}:{email}:{code}".encode()
+    return hashlib.sha256(value).hexdigest()
 
 
 def mail_config() -> ConnectionConfig:
@@ -52,16 +61,32 @@ def mail_config() -> ConnectionConfig:
 
 
 @router.post("/send-otp")
-async def send_otp(request: EmailRequest):
-    otp_code = f"{random.randint(100000, 999999)}"
-    otp_store[str(request.email)] = {
-        "code": otp_code,
-        "expires_at": datetime.now(timezone.utc) + timedelta(minutes=5),
-        "verified": False,
-    }
+async def send_otp(request: EmailRequest, db: DatabaseSession):
+    email = str(request.email)
+    if db.query(User).filter(User.email == email).first():
+        raise HTTPException(status_code=400, detail="이미 가입된 이메일입니다.")
+    otp_code = f"{secrets.randbelow(900000) + 100000}"
+    verification = db.get(EmailVerification, email)
+    now = datetime.now(timezone.utc)
+    if verification is not None and verification.created_at is not None:
+        last_sent = verification.created_at
+        if last_sent.tzinfo is None:
+            last_sent = last_sent.replace(tzinfo=timezone.utc)
+        if now - last_sent < timedelta(seconds=60):
+            raise HTTPException(
+                status_code=429, detail="인증번호는 1분 후 다시 요청할 수 있습니다."
+            )
+    if verification is None:
+        verification = EmailVerification(email=email, code_hash="", expires_at=now)
+        db.add(verification)
+    verification.code_hash = otp_hash(email, otp_code)
+    verification.expires_at = now + timedelta(minutes=5)
+    verification.verified = False
+    verification.created_at = now
+    db.commit()
     message = MessageSchema(
         subject="[위드유] 회원가입 이메일 인증번호",
-        recipients=[str(request.email)],
+        recipients=[email],
         body=(
             "<div style='font-family:Arial,sans-serif;padding:20px'>"
             "<h2>위드유 회원가입 이메일 인증번호</h2>"
@@ -73,42 +98,50 @@ async def send_otp(request: EmailRequest):
     try:
         await FastMail(mail_config()).send_message(message)
     except HTTPException:
-        otp_store.pop(str(request.email), None)
+        db.delete(verification)
+        db.commit()
         raise
     except Exception as exc:
-        otp_store.pop(str(request.email), None)
+        db.delete(verification)
+        db.commit()
         raise HTTPException(status_code=500, detail=f"이메일 발송 실패: {exc}") from exc
     return {"message": "인증번호를 이메일로 발송했습니다."}
 
 
 @router.post("/verify-otp")
-def verify_otp(request: VerifyOTPRequest):
+def verify_otp(request: VerifyOTPRequest, db: DatabaseSession):
     email = str(request.email)
-    stored = otp_store.get(email)
-    if not stored:
+    verification = db.get(EmailVerification, email)
+    if verification is None:
         raise HTTPException(status_code=400, detail="인증번호를 먼저 요청해 주세요.")
-    expires_at = stored["expires_at"]
-    if not isinstance(expires_at, datetime) or datetime.now(timezone.utc) > expires_at:
-        otp_store.pop(email, None)
+    expires_at = verification.expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if datetime.now(timezone.utc) > expires_at:
+        db.delete(verification)
+        db.commit()
         raise HTTPException(status_code=400, detail="인증번호가 만료되었습니다.")
-    if stored["code"] != request.code.strip():
+    if not secrets.compare_digest(
+        verification.code_hash, otp_hash(email, request.code.strip())
+    ):
         raise HTTPException(status_code=400, detail="인증번호가 일치하지 않습니다.")
-    stored["verified"] = True
+    verification.verified = True
+    db.commit()
     return {"message": "이메일 인증이 완료되었습니다."}
 
 
-@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-def register(user_data: UserRegister, db: Session = Depends(get_db)):
+@router.post(
+    "/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED
+)
+def register(user_data: UserRegister, db: DatabaseSession):
     email = str(user_data.email)
-    verification = otp_store.get(email)
-    if not verification or not verification.get("verified"):
+    verification = db.get(EmailVerification, email)
+    if verification is None or not verification.verified:
         raise HTTPException(status_code=400, detail="이메일 인증을 먼저 완료해 주세요.")
     if db.query(User).filter(User.username == user_data.username).first():
         raise HTTPException(status_code=400, detail="이미 사용 중인 사용자 이름입니다.")
     if db.query(User).filter(User.email == email).first():
         raise HTTPException(status_code=400, detail="이미 가입된 이메일입니다.")
-    
-    # 🎯 추가: 새로 회원가입하는 아이디의 이전 실패/잠금 기록 삭제
     FAILED_ATTEMPTS.pop(user_data.username, None)
 
     user = User(
@@ -117,14 +150,14 @@ def register(user_data: UserRegister, db: Session = Depends(get_db)):
         hashed_password=get_password_hash(user_data.password),
     )
     db.add(user)
+    db.delete(verification)
     db.commit()
     db.refresh(user)
-    otp_store.pop(email, None)
     return user
 
 
 @router.post("/login", response_model=Token)
-def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+def login(form_data: LoginForm, db: DatabaseSession):
     username = form_data.username
     now = datetime.now(timezone.utc)
     attempt = FAILED_ATTEMPTS.get(username)
@@ -132,7 +165,10 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
         lock_until = attempt["lock_until"]
         if isinstance(lock_until, datetime) and now < lock_until:
             remaining = max(1, int((lock_until - now).total_seconds() // 60))
-            raise HTTPException(status_code=429, detail=f"로그인이 잠겼습니다. {remaining}분 후 다시 시도하세요.")
+            raise HTTPException(
+                status_code=429,
+                detail=f"로그인이 잠겼습니다. {remaining}분 후 다시 시도하세요.",
+            )
         FAILED_ATTEMPTS.pop(username, None)
 
     user = db.query(User).filter(User.username == username).first()
@@ -141,7 +177,9 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
         state["count"] += 1
         if state["count"] >= MAX_FAILED_ATTEMPTS:
             state["lock_until"] = now + timedelta(minutes=LOCKOUT_MINUTES)
-            raise HTTPException(status_code=429, detail=f"로그인이 {LOCKOUT_MINUTES}분 동안 잠겼습니다.")
+            raise HTTPException(
+                status_code=429, detail=f"로그인이 {LOCKOUT_MINUTES}분 동안 잠겼습니다."
+            )
         raise HTTPException(
             status_code=401,
             detail=f"아이디 또는 비밀번호가 올바르지 않습니다. 남은 시도: {MAX_FAILED_ATTEMPTS - state['count']}",
@@ -149,30 +187,36 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
         )
 
     FAILED_ATTEMPTS.pop(username, None)
-    return {"access_token": create_access_token({"sub": user.username}), "token_type": "bearer"}
+    return {
+        "access_token": create_access_token({"sub": user.username}),
+        "token_type": "bearer",
+    }
 
 
 @router.get("/users/me", response_model=UserResponse)
-def read_users_me(current_user: User = Depends(get_current_user)):
+def read_users_me(current_user: AuthenticatedUser):
     return current_user
 
 
 @router.put("/users/me/password")
 def update_password(
     password_data: PasswordChange,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    current_user: AuthenticatedUser,
+    db: DatabaseSession,
 ):
-    if not verify_password(password_data.current_password, current_user.hashed_password):
-        raise HTTPException(status_code=400, detail="현재 비밀번호가 일치하지 않습니다.")
+    if not verify_password(
+        password_data.current_password, current_user.hashed_password
+    ):
+        raise HTTPException(
+            status_code=400, detail="현재 비밀번호가 일치하지 않습니다."
+        )
     current_user.hashed_password = get_password_hash(password_data.new_password)
     db.commit()
     return {"message": "비밀번호가 변경되었습니다."}
 
 
 @router.delete("/users/me")
-def delete_user(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    # 🎯 추가: 계정 삭제 시 메모리에 남은 실패/잠금 기록 삭제
+def delete_user(current_user: AuthenticatedUser, db: DatabaseSession):
     FAILED_ATTEMPTS.pop(current_user.username, None)
 
     db.delete(current_user)

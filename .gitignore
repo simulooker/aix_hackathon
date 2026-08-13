@@ -64,6 +64,7 @@ datasets/
 .supabase/
 .eas/
 services/api/local.db
+services/api/*.db
 services/api/Ultralytics/
 services/api/.matplotlib/
 *.sqlite

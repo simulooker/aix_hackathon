@@ -12,7 +12,19 @@ type KakaoMapProps = {
   hazards?: HazardReport[];
   route?: RoutePoint[];
   onMapPress?: (point: RoutePoint) => void;
+  searchRequest?: { query: string; requestId: number };
+  onSearchResults?: (results: KakaoPlace[]) => void;
   style?: StyleProp<ViewStyle>;
+};
+
+export type KakaoPlace = {
+  id: string;
+  name: string;
+  address: string;
+  roadAddress: string;
+  category: string;
+  latitude: number;
+  longitude: number;
 };
 
 const KAKAO_BASE_URL = 'https://withyou-105736498036.asia-northeast3.run.app';
@@ -24,13 +36,15 @@ export function KakaoMap({
   hazards = [],
   route = [],
   onMapPress,
+  searchRequest,
+  onSearchResults,
   style,
 }: KakaoMapProps) {
   const apiKey = process.env.EXPO_PUBLIC_KAKAO_MAP_KEY ?? '';
   const [mapError, setMapError] = useState<string>();
 
   const html = useMemo(() => {
-    const data = JSON.stringify({ center, currentLocation, destination, hazards, route }).replace(/</g, '\\u003c');
+    const data = JSON.stringify({ center, currentLocation, destination, hazards, route, searchRequest }).replace(/</g, '\\u003c');
     const safeKey = apiKey.replace(/[&<>"']/g, '');
 
     return `<!doctype html>
@@ -84,7 +98,7 @@ export function KakaoMap({
 
         data.hazards.forEach(function (hazard) {
           const severity = Number(hazard.severity || 0);
-          const color = severity >= 3 ? '#d92d20' : severity >= 2 ? '#f79009' : '#fdb022';
+          const color = severity >= 0.7 ? '#d92d20' : severity >= 0.4 ? '#f79009' : '#fdb022';
           new kakao.maps.Circle({
             map,
             center: new kakao.maps.LatLng(hazard.latitude, hazard.longitude),
@@ -109,13 +123,34 @@ export function KakaoMap({
           const point = event.latLng;
           send('press', { latitude: point.getLat(), longitude: point.getLng() });
         });
+
+        if (data.searchRequest && data.searchRequest.query && kakao.maps.services) {
+          const places = new kakao.maps.services.Places();
+          places.keywordSearch(data.searchRequest.query, function (results, searchStatus) {
+            if (searchStatus === kakao.maps.services.Status.OK) {
+              send('searchResults', { results: results.slice(0, 10).map(function (place) {
+                return {
+                  id: place.id,
+                  name: place.place_name,
+                  address: place.address_name,
+                  roadAddress: place.road_address_name,
+                  category: place.category_name,
+                  latitude: Number(place.y),
+                  longitude: Number(place.x)
+                };
+              }) });
+            } else {
+              send('searchResults', { results: [] });
+            }
+          }, { size: 10 });
+        }
       });
     }
     if (!'${safeKey}') {
       fail('카카오 지도 JavaScript 키가 설정되지 않았습니다.');
     } else {
       const script = document.createElement('script');
-      script.src = 'https://dapi.kakao.com/v2/maps/sdk.js?appkey=${safeKey}&autoload=false';
+      script.src = 'https://dapi.kakao.com/v2/maps/sdk.js?appkey=${safeKey}&autoload=false&libraries=services';
       script.onload = startMap;
       script.onerror = function() { fail('카카오 지도 서버에 연결하지 못했습니다.'); };
       document.head.appendChild(script);
@@ -123,17 +158,19 @@ export function KakaoMap({
   </script>
 </body>
 </html>`;
-  }, [apiKey, center, currentLocation, destination, hazards, route]);
+  }, [apiKey, center, currentLocation, destination, hazards, route, searchRequest]);
 
   const handleMessage = (event: WebViewMessageEvent) => {
     try {
-      const message = JSON.parse(event.nativeEvent.data) as { type: string; latitude?: number; longitude?: number };
+      const message = JSON.parse(event.nativeEvent.data) as { type: string; latitude?: number; longitude?: number; results?: KakaoPlace[] };
       if (message.type === 'ready') {
         setMapError(undefined);
       } else if (message.type === 'error') {
         setMapError((message as { message?: string }).message ?? '카카오 지도를 불러오지 못했습니다.');
       } else if (message.type === 'press' && message.latitude != null && message.longitude != null) {
         onMapPress?.({ latitude: message.latitude, longitude: message.longitude });
+      } else if (message.type === 'searchResults') {
+        onSearchResults?.(message.results ?? []);
       }
     } catch {
       // Ignore malformed messages from the embedded map.

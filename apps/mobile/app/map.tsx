@@ -1,11 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import FontAwesome5 from '@expo/vector-icons/FontAwesome5';
-import * as Location from 'expo-location';
 import type { Href } from 'expo-router';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Keyboard,
   Pressable,
   SafeAreaView,
@@ -15,7 +15,7 @@ import {
   View,
 } from 'react-native';
 
-import { KakaoMap } from '@/src/components/KakaoMap';
+import { KakaoMap, type KakaoPlace } from '@/src/components/KakaoMap';
 import { PrimaryButton } from '@/src/components/PrimaryButton';
 import { DEFAULT_REGION, ROUTE_PROFILES } from '@/src/constants/map';
 import { useCurrentLocation } from '@/src/features/location/useCurrentLocation';
@@ -30,6 +30,7 @@ export default function MapScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const username = useAuthStore((state) => state.username);
+  const clearUser = useAuthStore((state) => state.clearUser);
   const { coordinates, error, loading, refresh } = useCurrentLocation();
   const { profile, setProfile, fetchRoute, loading: routeLoading, error: routeError } = useRouteStore();
   const [hazards, setHazards] = useState<HazardReport[]>([]);
@@ -37,6 +38,8 @@ export default function MapScreen() {
   const [destinationName, setDestinationName] = useState('');
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string>();
+  const [searchRequest, setSearchRequest] = useState<{ query: string; requestId: number }>();
+  const [searchResults, setSearchResults] = useState<KakaoPlace[]>([]);
 
   useEffect(() => {
     if (!coordinates) return;
@@ -47,6 +50,7 @@ export default function MapScreen() {
     setDestination(point);
     if (label) setDestinationName(label);
     setSearchError(undefined);
+    setSearchResults([]);
   };
 
   const searchDestination = async () => {
@@ -55,21 +59,8 @@ export default function MapScreen() {
     setSearching(true);
     setSearchError(undefined);
     Keyboard.dismiss();
-    try {
-      const results = await Location.geocodeAsync(query);
-      if (!results.length) {
-        setSearchError('검색 결과가 없습니다. 주소를 더 자세히 입력해 주세요.');
-        return;
-      }
-      chooseDestination(
-        { latitude: results[0].latitude, longitude: results[0].longitude },
-        query,
-      );
-    } catch {
-      setSearchError('목적지를 검색하지 못했습니다. 네트워크 연결을 확인해 주세요.');
-    } finally {
-      setSearching(false);
-    }
+    setSearchResults([]);
+    setSearchRequest({ query, requestId: Date.now() });
   };
 
   const findRoute = async () => {
@@ -78,6 +69,17 @@ export default function MapScreen() {
     if (route?.geometry.length) {
       router.push(`/navigation/${route.route_id}` as Href);
     }
+  };
+
+  const openAccount = () => {
+    if (!username) {
+      router.push('/login' as Href);
+      return;
+    }
+    Alert.alert('계정', `${username}님으로 로그인되어 있습니다.`, [
+      { text: '취소', style: 'cancel' },
+      { text: '로그아웃', style: 'destructive', onPress: clearUser },
+    ]);
   };
 
   return (
@@ -89,6 +91,12 @@ export default function MapScreen() {
         destination={destination}
         hazards={hazards}
         onMapPress={(point) => chooseDestination(point, '지도에서 선택한 위치')}
+        searchRequest={searchRequest}
+        onSearchResults={(results) => {
+          setSearching(false);
+          setSearchResults(results);
+          if (!results.length) setSearchError('검색 결과가 없습니다. 지역명이나 주소를 함께 입력해 주세요.');
+        }}
       />
 
       <SafeAreaView style={styles.topArea} pointerEvents="box-none">
@@ -100,6 +108,9 @@ export default function MapScreen() {
               onChangeText={setDestinationName}
               onSubmitEditing={() => void searchDestination()}
               placeholder="목적지 또는 주소 입력"
+              placeholderTextColor="#71817B"
+              autoCapitalize="none"
+              autoCorrect={false}
               returnKeyType="search"
               style={styles.searchInput}
             />
@@ -113,12 +124,24 @@ export default function MapScreen() {
           </View>
           <Pressable
             style={styles.accountButton}
-            onPress={() => !username && router.push('/login' as Href)}>
+            onPress={openAccount}>
             <Ionicons name={username ? 'person' : 'log-in-outline'} size={19} color="#FFFFFF" />
             <Text style={styles.accountText} numberOfLines={1}>{username ?? '로그인'}</Text>
           </Pressable>
         </View>
         {searchError && <Text style={styles.searchError}>{searchError}</Text>}
+        {!!searchResults.length && <View style={styles.searchResults}>
+          {searchResults.slice(0, 6).map((place) => <Pressable
+            key={place.id}
+            style={styles.searchResultItem}
+            onPress={() => chooseDestination({ latitude: place.latitude, longitude: place.longitude }, place.name)}>
+            <Ionicons name="location-outline" size={20} color="#167C5A" />
+            <View style={styles.searchResultText}>
+              <Text style={styles.searchResultName}>{place.name}</Text>
+              <Text style={styles.searchResultAddress} numberOfLines={1}>{place.roadAddress || place.address}</Text>
+            </View>
+          </Pressable>)}
+        </View>}
       </SafeAreaView>
 
       <View style={[styles.panel, { bottom: insets.bottom + 12 }]}>
@@ -216,6 +239,9 @@ const styles = StyleSheet.create({
     color: '#B42318',
     backgroundColor: '#FFF3F1',
   },
+  searchResults: { marginHorizontal: 14, marginTop: 6, borderRadius: 16, overflow: 'hidden', backgroundColor: '#FFF', elevation: 7, shadowColor: '#000', shadowOpacity: 0.14, shadowRadius: 10 },
+  searchResultItem: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 9, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#DCE7E2' },
+  searchResultText: { flex: 1 }, searchResultName: { color: '#14251F', fontWeight: '800', fontSize: 14 }, searchResultAddress: { color: '#71817B', fontSize: 12, marginTop: 3 },
   panel: {
     position: 'absolute',
     left: 12,
