@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 
-import { analyzePhoto } from '@/src/services/api';
+import { submitReport } from '@/src/services/api';
 import type { AIAnalysisResponse } from '@/src/types/hazard';
 
 export type ReportSubmissionState =
@@ -11,10 +11,10 @@ export type ReportSubmissionState =
 
 export function useReportSubmission() {
   const [state, setState] = useState<ReportSubmissionState>({ status: 'idle' });
-  const submit = useCallback(async (photoUri: string) => {
+  const submit = useCallback(async (photoUri: string, latitude: number, longitude: number) => {
     setState({ status: 'submitting' });
     try {
-      const result = await analyzePhoto(photoUri);
+      const result = await submitReport({ photoUri, latitude, longitude });
       setState({ status: 'success', result });
       return result;
     } catch (error) {

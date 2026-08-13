@@ -19,8 +19,8 @@ const labelColor: Record<string,string>={
 };
 
 export default function ReportResultScreen(){
-  const router=useRouter(); const {uri}=useLocalSearchParams<{uri:string}>(); const {state,submit}=useReportSubmission();
-  useEffect(()=>{if(uri) void submit(uri);},[uri,submit]);
+  const router=useRouter(); const {uri,latitude,longitude}=useLocalSearchParams<{uri:string;latitude:string;longitude:string}>(); const {state,submit}=useReportSubmission();
+  useEffect(()=>{if(uri&&latitude&&longitude) void submit(uri,Number(latitude),Number(longitude));},[uri,latitude,longitude,submit]);
   const visibleDetections=state.status==='success'?state.result.detections.filter(item=>item.on_walkway):[];
   const detectedKinds=[...new Map(visibleDetections.map(item=>[item.label,item])).values()];
   return <SafeAreaView style={styles.safe}><ScrollView contentContainerStyle={styles.container}>
@@ -52,7 +52,7 @@ export default function ReportResultScreen(){
       <PrimaryButton label="다른 사진 분석" onPress={()=>router.replace('/report/camera' as Href)} style={styles.button}/>
       <PrimaryButton label="홈으로" variant="dark" onPress={()=>router.replace('/' as Href)} style={styles.button}/>
     </View>}
-    {state.status==='error'&&<View style={styles.box}><Text style={styles.error}>{state.message}</Text><PrimaryButton label="다시 시도" onPress={()=>uri&&void submit(uri)} style={styles.button}/></View>}
+    {state.status==='error'&&<View style={styles.box}><Text style={styles.error}>{state.message}</Text><PrimaryButton label="다시 시도" onPress={()=>uri&&latitude&&longitude&&void submit(uri,Number(latitude),Number(longitude))} style={styles.button}/></View>}
   </ScrollView></SafeAreaView>;
 }
 const styles=StyleSheet.create({safe:{flex:1,backgroundColor:'#F7FAF8'},container:{padding:24},imageFrame:{width:'100%',height:300,borderRadius:20,backgroundColor:'#E7EFEB',overflow:'hidden'},image:{width:'100%',height:'100%',resizeMode:'stretch'},detectionLayer:{...StyleSheet.absoluteFillObject},detectionBox:{position:'absolute',borderWidth:1},detectionLabel:{position:'absolute',maxWidth:150,paddingHorizontal:5,paddingVertical:2,color:'#FFF',fontSize:10,fontWeight:'800'},box:{marginTop:20,backgroundColor:'#FFF',borderRadius:18,padding:20,borderWidth:1,borderColor:'#DCE7E2'},title:{fontSize:18,fontWeight:'800',color:'#14251F'},risk:{fontSize:26,fontWeight:'900',marginBottom:14},body:{color:'#596A64',lineHeight:22},legendItem:{flexDirection:'row',alignItems:'center',gap:8,marginTop:6},legendSwatch:{width:11,height:11,borderRadius:2},item:{color:'#324A42',fontSize:13,lineHeight:20},error:{color:'#B42318',lineHeight:21},button:{marginTop:14}});

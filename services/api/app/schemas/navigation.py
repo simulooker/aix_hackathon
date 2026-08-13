@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -10,6 +12,7 @@ class RouteRequest(BaseModel):
     origin: Point
     destination: Point
     prefer_safe_route: bool = True
+    profile: Literal["general", "elderly", "wheelchair"] = "general"
 
 
 class RouteResponse(BaseModel):

@@ -5,11 +5,12 @@ from app.api.router import api_router
 from app.core.config import settings
 from app.db.session import Base, engine
 from app.models.user import User  # noqa: F401
+from app.models.report import HazardReport  # noqa: F401
 
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
-    title="AI Safe Route API",
+    title="위드유 API",
     version="0.1.0",
     description="보행 안전 경로 추천 및 위험 요소 분석 API",
 )

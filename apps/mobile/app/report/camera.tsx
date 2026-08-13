@@ -1,4 +1,5 @@
 import * as ImagePicker from 'expo-image-picker';
+import * as Location from 'expo-location';
 import type { Href } from 'expo-router';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
@@ -25,9 +26,26 @@ export default function ReportCameraScreen() {
     if (!result.canceled) setImageUri(result.assets[0].uri);
   };
 
-  const analyze = () => {
+  const [locating, setLocating] = useState(false);
+
+  const analyze = async () => {
     if (!imageUri) return;
-    router.push({ pathname: '/report/result', params: { uri: imageUri } } as unknown as Href);
+    setLocating(true);
+    try {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('위치 권한 필요', '위험 위치를 저장하려면 위치 권한을 허용해 주세요.');
+        return;
+      }
+      const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+      router.push({ pathname: '/report/result', params: {
+        uri: imageUri,
+        latitude: String(location.coords.latitude),
+        longitude: String(location.coords.longitude),
+      } } as unknown as Href);
+    } finally {
+      setLocating(false);
+    }
   };
 
   return (
@@ -39,7 +57,7 @@ export default function ReportCameraScreen() {
       </View>
       <PrimaryButton label="카메라로 촬영" onPress={() => void takePhoto()} />
       <PrimaryButton label="앨범에서 선택" variant="dark" onPress={() => void choosePhoto()} style={styles.button} />
-      <PrimaryButton label="사진 분석 및 제보" onPress={analyze} disabled={!imageUri} style={styles.button} />
+      <PrimaryButton label="사진 분석 및 제보" onPress={() => void analyze()} loading={locating} disabled={!imageUri} style={styles.button} />
     </SafeAreaView>
   );
 }

@@ -21,6 +21,12 @@ export type ReportResponse = {
   hazard_type?: string | null;
   confidence?: number | null;
   severity?: number | null;
+  overall_risk: RiskLevel;
+  model_ready: boolean;
+  walkway_detected: boolean;
+  obstacles_detected: number;
+  obstacles_on_walkway: number;
+  detections: AIDetection[];
 };
 
 export type AIDetection = {

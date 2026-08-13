@@ -33,6 +33,9 @@ export default function RegisterScreen() {
 
   const requestOtp = () =>
     run(async () => {
+      if (!username.trim() || !password) {
+        throw new Error('아이디와 비밀번호를 먼저 입력해 주세요.');
+      }
       const normalized = email.trim();
       await sendEmailOtp(normalized);
       setOtpSent(true);
@@ -42,6 +45,9 @@ export default function RegisterScreen() {
 
   const confirmOtp = () =>
     run(async () => {
+      if (!username.trim() || !password) {
+        throw new Error('아이디와 비밀번호를 먼저 입력해 주세요.');
+      }
       await verifyEmailOtp(email.trim(), code.trim());
       setVerified(true);
       setMessage('이메일 인증이 완료되었습니다.');
@@ -67,6 +73,19 @@ export default function RegisterScreen() {
         autoCapitalize="none"
         style={styles.input}
       />
+      <Text style={styles.label}>비밀번호</Text>
+      <TextInput
+        value={password}
+        onChangeText={setPassword}
+        placeholder="비밀번호 (영문·숫자·특수문자 포함 8자 이상)"
+        placeholderTextColor="#7A8984"
+        secureTextEntry
+        autoCapitalize="none"
+        autoCorrect={false}
+        textContentType="newPassword"
+        autoComplete="new-password"
+        style={styles.input}
+      />
       <Text style={styles.label}>이메일</Text>
       <View style={styles.row}>
         <TextInput
@@ -81,7 +100,7 @@ export default function RegisterScreen() {
           keyboardType="email-address"
           style={[styles.input, styles.flexInput]}
         />
-        <TouchableOpacity style={styles.smallButton} onPress={() => void requestOtp()} disabled={!email || loading}>
+        <TouchableOpacity style={styles.smallButton} onPress={() => void requestOtp()} disabled={!username || !password || !email || loading}>
           <Text style={styles.smallButtonText}>인증 요청</Text>
         </TouchableOpacity>
       </View>
@@ -99,22 +118,12 @@ export default function RegisterScreen() {
             maxLength={6}
             style={[styles.input, styles.flexInput]}
           />
-          <TouchableOpacity style={styles.smallButton} onPress={() => void confirmOtp()} disabled={!code || loading}>
+          <TouchableOpacity style={styles.smallButton} onPress={() => void confirmOtp()} disabled={!username || !password || !code || loading}>
             <Text style={styles.smallButtonText}>확인</Text>
           </TouchableOpacity>
           </View>
         </View>
       )}
-
-      <Text style={styles.label}>비밀번호</Text>
-      <TextInput
-        value={password}
-        onChangeText={setPassword}
-        placeholder="비밀번호 (영문·숫자·특수문자 포함 8자 이상)"
-        placeholderTextColor="#7A8984"
-        secureTextEntry
-        style={styles.input}
-      />
 
       {message && <Text style={styles.success}>{message}</Text>}
       {error && <Text style={styles.error}>{error}</Text>}

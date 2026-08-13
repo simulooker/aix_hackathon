@@ -40,7 +40,7 @@ export default function LoginScreen() {
       <Text style={styles.label}>아이디</Text>
       <TextInput value={username} onChangeText={setUsername} placeholder="아이디를 입력해 주세요" placeholderTextColor="#7A8984" autoCapitalize="none" style={styles.input} />
       <Text style={styles.label}>비밀번호</Text>
-      <TextInput value={password} onChangeText={setPassword} placeholder="비밀번호를 입력해 주세요" placeholderTextColor="#7A8984" secureTextEntry style={styles.input} />
+      <TextInput value={password} onChangeText={setPassword} placeholder="비밀번호를 입력해 주세요" placeholderTextColor="#7A8984" secureTextEntry autoCapitalize="none" autoCorrect={false} textContentType="password" autoComplete="current-password" style={styles.input} />
       {error && <Text style={styles.error}>{error}</Text>}
       <PrimaryButton label="로그인" onPress={() => void submit()} loading={loading} disabled={!username || !password} />
       <Text style={styles.link} onPress={() => router.push('/register' as Href)}>계정이 없나요? 회원가입</Text>

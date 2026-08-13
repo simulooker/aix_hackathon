@@ -41,6 +41,7 @@ def mail_config() -> ConnectionConfig:
         MAIL_USERNAME=settings.smtp_user,
         MAIL_PASSWORD=settings.smtp_password,
         MAIL_FROM=settings.smtp_user,
+        MAIL_FROM_NAME="위드유",
         MAIL_PORT=settings.smtp_port,
         MAIL_SERVER=settings.smtp_host,
         MAIL_STARTTLS=True,
@@ -59,11 +60,11 @@ async def send_otp(request: EmailRequest):
         "verified": False,
     }
     message = MessageSchema(
-        subject="[AI Safe Route] 회원가입 이메일 인증번호",
+        subject="[위드유] 회원가입 이메일 인증번호",
         recipients=[str(request.email)],
         body=(
             "<div style='font-family:Arial,sans-serif;padding:20px'>"
-            "<h2>회원가입 이메일 인증번호</h2>"
+            "<h2>위드유 회원가입 이메일 인증번호</h2>"
             f"<h1 style='letter-spacing:5px'>{otp_code}</h1>"
             "<p>인증번호는 5분간 유효합니다.</p></div>"
         ),

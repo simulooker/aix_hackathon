@@ -111,7 +111,8 @@ export async function requestRoute(params: { origin: RoutePoint; destination: Ro
     body: JSON.stringify({
       origin: params.origin,
       destination: params.destination,
-      prefer_safe_route: params.profile !== 'general',
+      prefer_safe_route: true,
+      profile: params.profile,
     }),
   });
   if (!response.ok) throw new Error(await errorMessage(response));
