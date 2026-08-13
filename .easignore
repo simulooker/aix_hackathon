@@ -1,0 +1,29 @@
+# EAS builds only the Expo mobile application from this monorepo.
+.git/
+.github/
+.expo/
+node_modules/
+
+# Backend, datasets, training scripts, and local artifacts are not part of APK builds.
+services/
+datasets/
+scripts/
+docs/
+supabase/
+tmp/
+app/
+
+# Local and generated files
+**/.pytest_cache/
+**/__pycache__/
+**/.expo/
+**/node_modules/
+**/dist/
+**/tmp/
+**/*.pt
+**/*.pth
+**/*.zip
+**/*.log
+**/.env
+
+# Keep the mobile source and monorepo package metadata required by npm workspaces.
