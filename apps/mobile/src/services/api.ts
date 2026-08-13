@@ -1,5 +1,3 @@
-import * as SecureStore from 'expo-secure-store';
-
 import { env } from '@/src/constants/env';
 import type { AIAnalysisResponse, HazardReport, ReportResponse } from '@/src/types/hazard';
 import type { RoutePoint, RouteProfile, RouteResponse } from '@/src/types/route';
@@ -11,6 +9,14 @@ const API_BASE_URL = normalizedApiUrl.endsWith('/api/v1')
 
 let accessToken: string | undefined;
 const ACCESS_TOKEN_KEY = 'withyou.accessToken';
+
+async function getSecureStore() {
+  try {
+    return await import('expo-secure-store');
+  } catch {
+    return undefined;
+  }
+}
 
 async function errorMessage(response: Response): Promise<string> {
   try {
@@ -26,7 +32,8 @@ export function setAccessToken(token?: string) {
 }
 
 export async function restoreAccessToken(): Promise<void> {
-  setAccessToken((await SecureStore.getItemAsync(ACCESS_TOKEN_KEY)) ?? undefined);
+  const secureStore = await getSecureStore();
+  setAccessToken((await secureStore?.getItemAsync(ACCESS_TOKEN_KEY)) ?? undefined);
 }
 
 export async function login(username: string, password: string): Promise<string> {
@@ -39,7 +46,8 @@ export async function login(username: string, password: string): Promise<string>
   if (!response.ok) throw new Error(await errorMessage(response));
   const result = (await response.json()) as { access_token: string };
   setAccessToken(result.access_token);
-  await SecureStore.setItemAsync(ACCESS_TOKEN_KEY, result.access_token);
+  const secureStore = await getSecureStore();
+  await secureStore?.setItemAsync(ACCESS_TOKEN_KEY, result.access_token);
   return result.access_token;
 }
 
