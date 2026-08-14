@@ -1,8 +1,9 @@
-import logging
-import os
 from dataclasses import dataclass
+import logging
 from math import asin, cos, radians, sin, sqrt
+import os
 from typing import Any
+
 import httpx
 
 logger = logging.getLogger(__name__)
@@ -71,9 +72,9 @@ def calculate_walking_route(
     # 30: 계단/육교 제외 (휠체어 및 교통약자 무장애 경로)
     search_option = 0
     if profile == "wheelchair":
-        search_option = 30  # 계단/육교 제외 무장애
+        search_option = 30
     elif profile == "elderly":
-        search_option = 4   # 대로/완만 보행로 우선
+        search_option = 4
 
     headers = {
         "appKey": TMAP_API_KEY,
@@ -104,7 +105,6 @@ def calculate_walking_route(
             geom_type = geom.get("type")
             coords = geom.get("coordinates", [])
 
-            # LineString 타입의 상세 도로 곡선 좌표 추출
             if geom_type == "LineString":
                 for lon, lat in coords:
                     point = {"latitude": lat, "longitude": lon}
@@ -113,7 +113,6 @@ def calculate_walking_route(
                     ):
                         geometry.append(point)
 
-            # 총 이동 거리 파싱
             props = feature.get("properties", {})
             if "totalDistance" in props:
                 total_distance = float(props["totalDistance"])
@@ -132,9 +131,8 @@ def calculate_walking_route(
             hazards_avoided=avoided_count,
         )
 
-    except Exception as exc:
+    except (httpx.HTTPError, Exception) as exc:  # noqa: BLE001
         logger.error(f"Tmap 보행자 API 호출 실패: {exc}")
-        # 예외 시 출발-도착 직선 폴백
         return RouteResult(
             geometry=[
                 {"latitude": origin.latitude, "longitude": origin.longitude},
