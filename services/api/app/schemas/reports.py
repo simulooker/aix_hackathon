@@ -1,4 +1,5 @@
 from datetime import datetime
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
@@ -8,7 +9,7 @@ from app.schemas.detection import Detection
 class ReportResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
-    report_id: str
+    report_id: UUID
     status: str
     filename: str | None
     latitude: float
@@ -28,7 +29,7 @@ class ReportResponse(BaseModel):
 class NearbyReport(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
-    id: str
+    id: UUID
     latitude: float
     longitude: float
     hazard_type: str | None
