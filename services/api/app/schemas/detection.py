@@ -11,6 +11,7 @@ class Detection(BaseModel):
     box: tuple[float, float, float, float]
     blocked_walkway_ratio: float = Field(ge=0, le=1)
     remaining_walkway_image_ratio: float = Field(ge=0, le=1)
+    proximity: float = Field(default=1, ge=0, le=1)
     on_walkway: bool
     risk: RiskLevel
 

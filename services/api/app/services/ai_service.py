@@ -55,7 +55,7 @@ class AIService:
         return combined
 
     @staticmethod
-    def _measure(mask: Any, box: list[int]) -> tuple[float, float, float]:
+    def _measure(mask: Any, box: list[int]) -> tuple[float, float, float, float]:
         import numpy as np
 
         height, width = mask.shape
@@ -68,40 +68,70 @@ class AIService:
         blocked_rows: list[float] = []
         remaining_rows: list[float] = []
         for row in mask[y1:y2]:
-            total = int(row.sum())
-            blocked = int(row[x1:x2].sum())
-            if total and blocked:
+            walkable = np.flatnonzero(row)
+            if not walkable.size:
+                continue
+
+            # A row can contain several disconnected surfaces. Only use the
+            # continuous corridor that overlaps the obstacle instead of adding
+            # unrelated sidewalks/roads elsewhere in the image.
+            breaks = np.where(np.diff(walkable) > 1)[0] + 1
+            segments = np.split(walkable, breaks)
+            corridor = max(
+                segments,
+                key=lambda segment: max(
+                    0, min(x2, int(segment[-1]) + 1) - max(x1, int(segment[0]))
+                ),
+            )
+            corridor_x1, corridor_x2 = int(corridor[0]), int(corridor[-1]) + 1
+            blocked = max(0, min(x2, corridor_x2) - max(x1, corridor_x1))
+            total = corridor_x2 - corridor_x1
+            if blocked:
                 blocked_rows.append(blocked / total)
                 remaining_rows.append(max(0, total - blocked) / width)
         return (
             overlap,
             float(np.median(blocked_rows)) if blocked_rows else 0.0,
             float(np.median(remaining_rows)) if remaining_rows else 0.0,
+            y2 / height,
         )
 
     @staticmethod
-    def _risk(label: str, on_walkway: bool, blocked: float, remaining: float) -> str:
+    def _risk(
+        label: str,
+        on_walkway: bool,
+        blocked: float,
+        remaining: float,
+        proximity: float = 1.0,
+    ) -> str:
         if not on_walkway:
             return "none"
+
+        # The bottom of a detected box is a useful monocular distance proxy.
+        # Far-away objects should contribute less than objects near the user.
+        distance_factor = min(1.0, max(0.25, (proximity - 0.30) / 0.55))
+        effective_blocked = blocked * distance_factor
+
         if label == "motor_vehicle":
-            # Do not raise the scene risk merely because a vehicle exists.
-            # The remaining-width estimate is unstable for distant objects
-            # and perspective-heavy night scenes, so vehicles are graded by
-            # how much of the walkable area they actually block.
-            if blocked >= 0.70:
+            if effective_blocked >= 0.65 and remaining < 0.08:
                 return "high"
-            if blocked >= 0.45:
+            if effective_blocked >= 0.40:
                 return "medium"
-            if blocked >= 0.25:
+            if effective_blocked >= 0.18:
                 return "low"
             return "none"
-        if remaining and remaining < 0.10:
+
+        if remaining and remaining < 0.07 and effective_blocked >= 0.25:
             return "medium" if label in {"person", "mobility_aid"} else "high"
         if label in {"person", "mobility_aid"}:
-            return "medium" if blocked >= 0.40 else "low"
-        if blocked >= 0.35:
+            if effective_blocked >= 0.35:
+                return "medium"
+            return "low" if effective_blocked >= 0.10 else "none"
+        if effective_blocked >= 0.40:
             return "high"
-        return "medium" if blocked >= 0.15 else "low"
+        if effective_blocked >= 0.18:
+            return "medium"
+        return "low" if effective_blocked >= 0.08 else "none"
 
     def analyze(self, image_bytes: bytes) -> dict[str, Any]:
         import cv2
@@ -127,8 +157,8 @@ class AIService:
                 obstacles.boxes.cls.int().cpu().tolist(),
                 obstacles.boxes.conf.cpu().tolist(),
             ):
-                overlap, blocked, remaining = self._measure(mask, box)
-                on_walkway = overlap >= 0.15
+                overlap, blocked, remaining, proximity = self._measure(mask, box)
+                on_walkway = overlap >= 0.25
                 label = obstacles.names[class_id]
                 detections.append(
                     {
@@ -142,8 +172,11 @@ class AIService:
                         ),
                         "blocked_walkway_ratio": round(blocked, 4),
                         "remaining_walkway_image_ratio": round(remaining, 4),
+                        "proximity": round(proximity, 4),
                         "on_walkway": on_walkway,
-                        "risk": self._risk(label, on_walkway, blocked, remaining),
+                        "risk": self._risk(
+                            label, on_walkway, blocked, remaining, proximity
+                        ),
                     }
                 )
         risk = max(
