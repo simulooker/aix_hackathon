@@ -1,7 +1,7 @@
-from dataclasses import dataclass
 import logging
-from math import asin, cos, radians, sin, sqrt
 import os
+from dataclasses import dataclass
+from math import asin, cos, radians, sin, sqrt
 from typing import Any
 
 import httpx
@@ -66,10 +66,6 @@ def calculate_walking_route(
 
     hazards = hazards or []
 
-    # Tmap 보행자 searchOption 설정
-    # 0: 추천 (최신 골목길 및 최단 도보 경로)
-    # 4: 대로 우선 (고령자용 평탄/넓은 도로 우선)
-    # 30: 계단/육교 제외 (휠체어 및 교통약자 무장애 경로)
     search_option = 0
     if profile == "wheelchair":
         search_option = 30
