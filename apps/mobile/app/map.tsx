@@ -1,8 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import FontAwesome5 from '@expo/vector-icons/FontAwesome5';
 import type { Href } from 'expo-router';
-import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -14,6 +14,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { KakaoMap, type KakaoPlace } from '@/src/components/KakaoMap';
 import { PrimaryButton } from '@/src/components/PrimaryButton';
@@ -24,7 +25,6 @@ import { useAuthStore } from '@/src/stores/auth-store';
 import { useRouteStore } from '@/src/stores/route-store';
 import type { HazardReport } from '@/src/types/hazard';
 import type { RoutePoint } from '@/src/types/route';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function MapScreen() {
   const router = useRouter();
@@ -32,7 +32,16 @@ export default function MapScreen() {
   const username = useAuthStore((state) => state.username);
   const clearUser = useAuthStore((state) => state.clearUser);
   const { coordinates, error, loading, refresh } = useCurrentLocation();
-  const { profile, setProfile, fetchRoute, loading: routeLoading, error: routeError } = useRouteStore();
+  const {
+    route,
+    profile,
+    setProfile,
+    fetchRoute,
+    clearRoute,
+    loading: routeLoading,
+    error: routeError,
+  } = useRouteStore();
+
   const [hazards, setHazards] = useState<HazardReport[]>([]);
   const [destination, setDestination] = useState<RoutePoint>();
   const [destinationName, setDestinationName] = useState('');
@@ -41,16 +50,32 @@ export default function MapScreen() {
   const [searchRequest, setSearchRequest] = useState<{ query: string; requestId: number }>();
   const [searchResults, setSearchResults] = useState<KakaoPlace[]>([]);
 
+  // 안내 화면에서 뒤로 돌아와 메인 지도로 복귀할 때 이전 경로선 초기화
+  useFocusEffect(
+    useCallback(() => {
+      if (clearRoute) clearRoute();
+    }, [clearRoute])
+  );
+
   useEffect(() => {
     if (!coordinates) return;
     getNearbyHazards({ ...coordinates }).then(setHazards).catch(() => setHazards([]));
   }, [coordinates]);
 
   const chooseDestination = (point: RoutePoint, label?: string) => {
+    Keyboard.dismiss();
     setDestination(point);
-    if (label) setDestinationName(label);
+    if (clearRoute) clearRoute(); // 새 목적지 선택 시 이전 경로선 즉시 삭제
+
+    if (label && label !== '지도에서 선택한 위치') {
+      setDestinationName(label);
+    } else {
+      setDestinationName('');
+    }
     setSearchError(undefined);
     setSearchResults([]);
+    setSearchRequest(undefined);
+    setSearching(false);
   };
 
   const searchDestination = async () => {
@@ -65,9 +90,9 @@ export default function MapScreen() {
 
   const findRoute = async () => {
     if (!coordinates || !destination) return;
-    const route = await fetchRoute(coordinates, destination);
-    if (route?.geometry.length) {
-      router.push(`/navigation/${route.route_id}` as Href);
+    const result = await fetchRoute(coordinates, destination);
+    if (result?.geometry.length) {
+      router.push(`/navigation/${result.route_id}` as Href);
     }
   };
 
@@ -90,12 +115,17 @@ export default function MapScreen() {
         currentLocation={coordinates}
         destination={destination}
         hazards={hazards}
+        route={route?.geometry}
         onMapPress={(point) => chooseDestination(point, '지도에서 선택한 위치')}
         searchRequest={searchRequest}
         onSearchResults={(results) => {
           setSearching(false);
-          setSearchResults(results);
-          if (!results.length) setSearchError('검색 결과가 없습니다. 지역명이나 주소를 함께 입력해 주세요.');
+          if (searchRequest) {
+            setSearchResults(results);
+            if (!results.length) {
+              setSearchError('검색 결과가 없습니다. 지역명이나 주소를 함께 입력해 주세요.');
+            }
+          }
         }}
       />
 
@@ -107,8 +137,13 @@ export default function MapScreen() {
               value={destinationName}
               onChangeText={setDestinationName}
               onSubmitEditing={() => void searchDestination()}
-              placeholder="목적지 또는 주소 입력"
-              placeholderTextColor="#71817B"
+              placeholder={destination && !destinationName ? '지도에서 선택한 위치' : '목적지 또는 주소 입력'}
+              placeholderTextColor={destination && !destinationName ? '#167C5A' : '#71817B'}
+              onFocus={() => {
+                if (destinationName === '지도에서 선택한 위치') {
+                  setDestinationName('');
+                }
+              }}
               autoCapitalize="none"
               autoCorrect={false}
               returnKeyType="search"
@@ -122,26 +157,32 @@ export default function MapScreen() {
               </Pressable>
             )}
           </View>
-          <Pressable
-            style={styles.accountButton}
-            onPress={openAccount}>
+          <Pressable style={styles.accountButton} onPress={openAccount}>
             <Ionicons name={username ? 'person' : 'log-in-outline'} size={19} color="#FFFFFF" />
-            <Text style={styles.accountText} numberOfLines={1}>{username ?? '로그인'}</Text>
+            <Text style={styles.accountText} numberOfLines={1}>
+              {username ?? '로그인'}
+            </Text>
           </Pressable>
         </View>
         {searchError && <Text style={styles.searchError}>{searchError}</Text>}
-        {!!searchResults.length && <View style={styles.searchResults}>
-          {searchResults.slice(0, 6).map((place) => <Pressable
-            key={place.id}
-            style={styles.searchResultItem}
-            onPress={() => chooseDestination({ latitude: place.latitude, longitude: place.longitude }, place.name)}>
-            <Ionicons name="location-outline" size={20} color="#167C5A" />
-            <View style={styles.searchResultText}>
-              <Text style={styles.searchResultName}>{place.name}</Text>
-              <Text style={styles.searchResultAddress} numberOfLines={1}>{place.roadAddress || place.address}</Text>
-            </View>
-          </Pressable>)}
-        </View>}
+        {searchResults.length > 0 && (
+          <View style={styles.searchResults}>
+            {searchResults.slice(0, 6).map((place) => (
+              <Pressable
+                key={place.id}
+                style={styles.searchResultItem}
+                onPress={() => chooseDestination({ latitude: place.latitude, longitude: place.longitude }, place.name)}>
+                <Ionicons name="location-outline" size={20} color="#167C5A" />
+                <View style={styles.searchResultText}>
+                  <Text style={styles.searchResultName}>{place.name}</Text>
+                  <Text style={styles.searchResultAddress} numberOfLines={1}>
+                    {place.roadAddress || place.address}
+                  </Text>
+                </View>
+              </Pressable>
+            ))}
+          </View>
+        )}
       </SafeAreaView>
 
       <View style={[styles.panel, { bottom: insets.bottom + 12 }]}>
@@ -173,7 +214,9 @@ export default function MapScreen() {
                   />
                 )}
                 <Text style={[styles.profileLabel, selected && styles.profileLabelActive]}>{item.label}</Text>
-                <Text style={[styles.profileDescription, selected && styles.profileDescriptionActive]}>{item.description}</Text>
+                <Text style={[styles.profileDescription, selected && styles.profileDescriptionActive]}>
+                  {item.description}
+                </Text>
               </Pressable>
             );
           })}
@@ -239,9 +282,30 @@ const styles = StyleSheet.create({
     color: '#B42318',
     backgroundColor: '#FFF3F1',
   },
-  searchResults: { marginHorizontal: 14, marginTop: 6, borderRadius: 16, overflow: 'hidden', backgroundColor: '#FFF', elevation: 7, shadowColor: '#000', shadowOpacity: 0.14, shadowRadius: 10 },
-  searchResultItem: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 9, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#DCE7E2' },
-  searchResultText: { flex: 1 }, searchResultName: { color: '#14251F', fontWeight: '800', fontSize: 14 }, searchResultAddress: { color: '#71817B', fontSize: 12, marginTop: 3 },
+  searchResults: {
+    marginHorizontal: 14,
+    marginTop: 6,
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: '#FFF',
+    elevation: 7,
+    shadowColor: '#000',
+    shadowOpacity: 0.14,
+    shadowRadius: 10,
+  },
+  searchResultItem: {
+    minHeight: 58,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#DCE7E2',
+  },
+  searchResultText: { flex: 1 },
+  searchResultName: { color: '#14251F', fontWeight: '800', fontSize: 14 },
+  searchResultAddress: { color: '#71817B', fontSize: 12, marginTop: 3 },
   panel: {
     position: 'absolute',
     left: 12,
