@@ -13,8 +13,8 @@ logger = logging.getLogger(__name__)
 DEFAULT_ORS_API_KEY = "eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjI3YmRiNmIxNjFmODQwZDI5MzMzNzBjNjBlOTQzZGZkIiwiaCI6Im11cm11cjY0In0="
 ORS_API_KEY = getattr(settings, "ors_api_key", None) or DEFAULT_ORS_API_KEY
 
-#  신규 HeiGIT 공식 ORS 엔드포인트로 변경
-ORS_DIRECTIONS_URL = "https://api.heigit.org/openrouteservice/v2/directions"
+# ORS 공식 v2 기본 엔드포인트
+ORS_BASE_URL = "https://api.openrouteservice.org"
 MAX_WALKING_DISTANCE_M = 10_000
 
 
@@ -61,6 +61,41 @@ def _nearby_hazards(
         ):
             nearby.append(hazard)
     return tuple(nearby)
+
+
+def _candidate_score(candidate: _RouteCandidate, profile: str) -> float:
+    """테스트 코드 및 위험도 평가를 위한 스코어 함수"""
+    penalty_per_full_risk = {
+        "general": 35,
+        "elderly": 80,
+        "wheelchair": 130,
+    }.get(profile, 35)
+    risk = sum(
+        max(0.0, min(1.0, float(getattr(item, "severity", 0) or 0)))
+        for item in candidate.hazards
+    )
+    return candidate.distance_m + risk * penalty_per_full_risk
+
+
+def _select_candidate(
+    candidates: list[_RouteCandidate], profile: str, prefer_safe_route: bool
+) -> tuple[_RouteCandidate, int]:
+    """CI 테스트(test_route_service.py) 호환 및 최적 경로 선택 함수"""
+    if not candidates:
+        raise ValueError("후보 경로가 없습니다.")
+    shortest = min(candidates, key=lambda item: item.distance_m)
+    if not prefer_safe_route or not any(item.hazards for item in candidates):
+        return shortest, 0
+    max_detour_ratio = {"general": 1.05, "elderly": 1.10, "wheelchair": 1.15}.get(
+        profile, 1.05
+    )
+    reasonable = [
+        item
+        for item in candidates
+        if item.distance_m <= shortest.distance_m * max_detour_ratio
+    ]
+    selected = min(reasonable, key=lambda item: _candidate_score(item, profile))
+    return selected, max(0, len(shortest.hazards) - len(selected.hazards))
 
 
 def _parse_ors_candidate(
@@ -122,11 +157,11 @@ def calculate_walking_route(
 
     hazards = hazards or []
     ors_profile = "wheelchair" if profile == "wheelchair" else "foot-walking"
-    url = f"{ORS_DIRECTIONS_URL}/{ors_profile}/geojson"
+    url = f"{ORS_BASE_URL}/v2/directions/{ors_profile}/geojson"
 
     raw_key = (ORS_API_KEY or "").strip()
     headers = {
-        "Authorization": raw_key,
+        "Authorization": f"Bearer {raw_key}" if not raw_key.startswith("Bearer ") else raw_key,
         "Content-Type": "application/json; charset=utf-8",
         "Accept": "application/json, application/geo+json",
     }
@@ -155,11 +190,15 @@ def calculate_walking_route(
             response.raise_for_status()
             candidate = _parse_ors_candidate(response.json(), hazards)
 
+        selected, avoided_count = _select_candidate(
+            [candidate], profile, prefer_safe_route and bool(hazards)
+        )
+
         return RouteResult(
-            geometry=candidate.geometry,
-            distance_m=candidate.distance_m,
-            hazards_avoided=0,
-            hazards_on_route=candidate.hazards,
+            geometry=selected.geometry,
+            distance_m=selected.distance_m,
+            hazards_avoided=avoided_count,
+            hazards_on_route=selected.hazards,
             used_fallback=False,
         )
 
