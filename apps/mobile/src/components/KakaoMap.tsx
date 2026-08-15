@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import WebView, { WebViewMessageEvent } from 'react-native-webview';
 
+import type { BusStop, LiveBus } from '@/src/types/bus';
 import type { HazardReport } from '@/src/types/hazard';
 import type { RoutePoint } from '@/src/types/route';
 
@@ -12,6 +13,8 @@ type KakaoMapProps = {
   destination?: RoutePoint;
   hazards?: HazardReport[];
   route?: RoutePoint[];
+  busStops?: BusStop[];
+  buses?: LiveBus[];
   onMapPress?: (point: RoutePoint) => void;
   searchRequest?: { query: string; requestId: number };
   onSearchResults?: (results: KakaoPlace[]) => void;
@@ -39,6 +42,8 @@ export function KakaoMap({
   destination,
   hazards = [],
   route = [],
+  busStops = [],
+  buses = [],
   onMapPress,
   searchRequest,
   onSearchResults,
@@ -48,6 +53,27 @@ export function KakaoMap({
   const apiKey = process.env.EXPO_PUBLIC_KAKAO_MAP_KEY ?? '';
   const [mapError, setMapError] = useState<string>();
   const webViewRef = useRef<WebView>(null);
+
+  // 버스 데이터는 20초마다 바뀌므로 HTML 을 다시 만들지 않고 지도에 주입만 한다.
+  // (HTML 을 새로 만들면 WebView 가 통째로 리로드되어 지도가 깜빡인다.)
+  const busPayloadRef = useRef({ stops: busStops, buses });
+  busPayloadRef.current = { stops: busStops, buses };
+
+  const pushBusLayer = useCallback((payload: { stops: BusStop[]; buses: LiveBus[] }) => {
+    const encoded = JSON.stringify(JSON.stringify(payload));
+    webViewRef.current?.injectJavaScript(`
+      if (window.__withyouBus) {
+        var payload = JSON.parse(${encoded});
+        window.__withyouBus.setStops(payload.stops);
+        window.__withyouBus.setBuses(payload.buses);
+      }
+      true;
+    `);
+  }, []);
+
+  useEffect(() => {
+    pushBusLayer({ stops: busStops, buses });
+  }, [busStops, buses, pushBusLayer]);
 
   useEffect(() => {
     if (!recenterRequest || !currentLocation) return;
@@ -72,6 +98,13 @@ export function KakaoMap({
   <style>
     html,body,#map{width:100%;height:100%;margin:0;padding:0;overflow:hidden;background:#e7efeb}
     #status{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:24px;color:#52645e;font:14px sans-serif;text-align:center}
+    .bus-stop{width:11px;height:11px;border-radius:50%;background:#1f6feb;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.35);cursor:pointer}
+    .bus-pin{position:relative;cursor:pointer;font:700 12px/1 -apple-system,BlinkMacSystemFont,sans-serif;white-space:nowrap}
+    .bus-pin .body{display:flex;align-items:center;gap:5px;padding:5px 10px;border-radius:14px;background:#1f6feb;color:#fff;box-shadow:0 2px 6px rgba(0,0,0,.32)}
+    .bus-pin .glyph{width:9px;height:11px;border-radius:2px;background:#fff;box-shadow:inset 0 3px 0 #1f6feb,inset 0 5px 0 #fff}
+    .bus-pin .tail{position:absolute;left:50%;bottom:-5px;width:0;height:0;margin-left:-5px;
+      border-left:5px solid transparent;border-right:5px solid transparent;border-top:6px solid #1f6feb}
+    .bus-tip{padding:5px 8px;font:12px sans-serif;white-space:nowrap}
   </style>
 </head>
 <body>
@@ -89,6 +122,101 @@ export function KakaoMap({
       send('error', { message });
     }
     window.onerror = function(message) { fail('지도 실행 오류: ' + message); };
+
+    // 버스정류장 / 실시간 버스 오버레이 레이어.
+    // React Native 쪽에서 window.__withyouBus.setStops / setBuses 로 갱신한다.
+    function createBusLayer(map) {
+      const tip = new kakao.maps.InfoWindow({ removable: true });
+      let stopOverlays = [];
+      const busOverlays = {}; // vehicleNo -> { overlay, label }
+
+      function openTip(position, text) {
+        tip.setContent('<div class="bus-tip">' + text + '</div>');
+        tip.setPosition(position);
+        tip.open(map);
+      }
+
+      function escapeHtml(value) {
+        return String(value == null ? '' : value).replace(/[&<>"']/g, function (character) {
+          return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character];
+        });
+      }
+
+      return {
+        setStops: function (stops) {
+          stopOverlays.forEach(function (overlay) { overlay.setMap(null); });
+          stopOverlays = (stops || []).map(function (stop) {
+            const position = new kakao.maps.LatLng(stop.latitude, stop.longitude);
+            const element = document.createElement('div');
+            element.className = 'bus-stop';
+            element.addEventListener('click', function () {
+              openTip(position, escapeHtml(stop.name));
+            });
+            return new kakao.maps.CustomOverlay({
+              map: map, position: position, content: element,
+              xAnchor: 0.5, yAnchor: 0.5, zIndex: 3, clickable: true
+            });
+          });
+        },
+
+        setBuses: function (buses) {
+          const seen = {};
+          (buses || []).forEach(function (bus) {
+            if (!bus || !bus.vehicleNo) return;
+            seen[bus.vehicleNo] = true;
+            const position = new kakao.maps.LatLng(bus.latitude, bus.longitude);
+            const existing = busOverlays[bus.vehicleNo];
+
+            if (existing) {
+              // 이미 있는 차량은 위치만 옮겨서 깜빡임 없이 움직이게 한다.
+              existing.overlay.setPosition(position);
+              existing.label.textContent = bus.routeNo || '';
+              existing.position = position;
+              existing.bus = bus;
+              return;
+            }
+
+            const element = document.createElement('div');
+            element.className = 'bus-pin';
+            const body = document.createElement('div');
+            body.className = 'body';
+            const glyph = document.createElement('span');
+            glyph.className = 'glyph';
+            const label = document.createElement('span');
+            label.textContent = bus.routeNo || '';
+            body.appendChild(glyph);
+            body.appendChild(label);
+            const tail = document.createElement('div');
+            tail.className = 'tail';
+            element.appendChild(body);
+            element.appendChild(tail);
+
+            const entry = { position: position, bus: bus, label: label };
+            element.addEventListener('click', function () {
+              const detail = entry.bus;
+              const parts = [escapeHtml(detail.routeNo) + '번'];
+              if (detail.nodeName) parts.push(escapeHtml(detail.nodeName) + ' 부근');
+              if (detail.vehicleNo) parts.push(escapeHtml(detail.vehicleNo));
+              openTip(entry.position, parts.join('<br/>'));
+            });
+
+            entry.overlay = new kakao.maps.CustomOverlay({
+              map: map, position: position, content: element,
+              xAnchor: 0.5, yAnchor: 1.1, zIndex: 8, clickable: true
+            });
+            busOverlays[bus.vehicleNo] = entry;
+          });
+
+          // 더 이상 내려오지 않는 차량(운행 종료 등)은 지운다.
+          Object.keys(busOverlays).forEach(function (vehicleNo) {
+            if (seen[vehicleNo]) return;
+            busOverlays[vehicleNo].overlay.setMap(null);
+            delete busOverlays[vehicleNo];
+          });
+        }
+      };
+    }
+
     function startMap() {
       if (!window.kakao || !window.kakao.maps) {
         fail('카카오 지도 SDK를 불러오지 못했습니다. 키와 허용 도메인을 확인해 주세요.');
@@ -143,6 +271,9 @@ export function KakaoMap({
           const point = event.latLng;
           send('press', { latitude: point.getLat(), longitude: point.getLng() });
         });
+
+        window.__withyouBus = createBusLayer(map);
+        send('busLayerReady', {});
 
         if (data.searchRequest && data.searchRequest.query && kakao.maps.services) {
           const places = new kakao.maps.services.Places();
@@ -235,6 +366,9 @@ export function KakaoMap({
       const message = JSON.parse(event.nativeEvent.data) as { type: string; latitude?: number; longitude?: number; results?: KakaoPlace[] };
       if (message.type === 'ready') {
         setMapError(undefined);
+      } else if (message.type === 'busLayerReady') {
+        // 지도 HTML 이 다시 만들어지면 버스 오버레이가 사라지므로 현재 상태를 다시 밀어넣는다.
+        pushBusLayer(busPayloadRef.current);
       } else if (message.type === 'error') {
         setMapError((message as { message?: string }).message ?? '카카오 지도를 불러오지 못했습니다.');
       } else if (message.type === 'press' && message.latitude != null && message.longitude != null) {

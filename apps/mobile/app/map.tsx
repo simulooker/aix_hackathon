@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import type { Href } from 'expo-router';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -20,13 +20,18 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KakaoMap, type KakaoPlace } from '@/src/components/KakaoMap';
 import { PrimaryButton } from '@/src/components/PrimaryButton';
 import { DEFAULT_REGION } from '@/src/constants/map';
+import { useLiveBuses } from '@/src/features/bus/useLiveBuses';
 import { useCurrentLocation } from '@/src/features/location/useCurrentLocation';
 import { getNearbyHazards } from '@/src/services/api';
 import { useAuthStore } from '@/src/stores/auth-store';
 import { usePreferencesStore } from '@/src/stores/preferences-store';
 import { useRouteStore } from '@/src/stores/route-store';
+import type { BusStop, LiveBus } from '@/src/types/bus';
 import type { HazardReport } from '@/src/types/hazard';
 import type { RoutePoint } from '@/src/types/route';
+
+const EMPTY_STOPS: BusStop[] = [];
+const EMPTY_BUSES: LiveBus[] = [];
 
 export default function MapScreen() {
   const router = useRouter();
@@ -34,6 +39,8 @@ export default function MapScreen() {
   const username = useAuthStore((state) => state.username);
   const clearUser = useAuthStore((state) => state.clearUser);
   const showHazards = usePreferencesStore((state) => state.showHazards);
+  const showLiveBuses = usePreferencesStore((state) => state.showLiveBuses);
+  const setShowLiveBuses = usePreferencesStore((state) => state.setShowLiveBuses);
   const preferencesInitialized = usePreferencesStore((state) => state.initialized);
   const routeProfile = usePreferencesStore((state) => state.routeProfile);
   const { coordinates, error, loading, initialized: locationInitialized, refresh } = useCurrentLocation();
@@ -58,7 +65,19 @@ export default function MapScreen() {
   const [searchResults, setSearchResults] = useState<KakaoPlace[]>([]);
   const [accountMenuVisible, setAccountMenuVisible] = useState(false);
   const [recenterRequest, setRecenterRequest] = useState(0);
+  const [panelHeight, setPanelHeight] = useState(0);
   const profilePromptShown = useRef(false);
+
+  const {
+    stops: busStops,
+    buses,
+    loading: busesLoading,
+    error: busError,
+  } = useLiveBuses(coordinates, showLiveBuses);
+
+  // 매 렌더마다 새 배열을 넘기면 지도 WebView 가 불필요하게 다시 그려진다.
+  const visibleBusStops = useMemo(() => (showLiveBuses ? busStops : EMPTY_STOPS), [busStops, showLiveBuses]);
+  const visibleBuses = useMemo(() => (showLiveBuses ? buses : EMPTY_BUSES), [buses, showLiveBuses]);
 
   // 안내 화면에서 뒤로 돌아와 메인 지도로 복귀할 때 이전 경로선 초기화
   useFocusEffect(
@@ -206,6 +225,8 @@ export default function MapScreen() {
         destination={destination}
         hazards={showHazards ? hazards : []}
         route={route?.geometry}
+        busStops={visibleBusStops}
+        buses={visibleBuses}
         onMapPress={(point) => chooseDestination(point, '지도에서 선택한 위치')}
         searchRequest={searchRequest}
         onSearchResults={(results) => {
@@ -319,7 +340,30 @@ export default function MapScreen() {
         </Pressable>
       </Modal>
 
-      <View style={[styles.panel, { bottom: insets.bottom + 12 }]}>
+      <View
+        style={[styles.busToggleWrap, { bottom: insets.bottom + 12 + panelHeight + 12 }]}
+        pointerEvents="box-none">
+        {showLiveBuses && busError && <Text style={styles.busError}>{busError}</Text>}
+        <Pressable
+          accessibilityRole="switch"
+          accessibilityState={{ checked: showLiveBuses }}
+          accessibilityLabel={showLiveBuses ? '실시간 버스 위치 끄기' : '실시간 버스 위치 켜기'}
+          style={[styles.busToggle, showLiveBuses && styles.busToggleOn]}
+          onPress={() => setShowLiveBuses(!showLiveBuses)}>
+          {showLiveBuses && busesLoading ? (
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          ) : (
+            <Ionicons name="bus" size={22} color={showLiveBuses ? '#FFFFFF' : '#40534C'} />
+          )}
+          <Text style={[styles.busToggleText, showLiveBuses && styles.busToggleTextOn]}>
+            실시간 버스
+          </Text>
+        </Pressable>
+      </View>
+
+      <View
+        style={[styles.panel, { bottom: insets.bottom + 12 }]}
+        onLayout={(event) => setPanelHeight(event.nativeEvent.layout.height)}>
         <View style={styles.panelHeader}>
           <View>
             <Text style={styles.title}>안전 경로</Text>
@@ -441,6 +485,34 @@ const styles = StyleSheet.create({
   originButtonText: { color: '#245EA8', fontSize: 12, fontWeight: '800' },
   destinationButton: { backgroundColor: '#167C5A' },
   destinationButtonText: { color: '#FFFFFF', fontSize: 12, fontWeight: '800' },
+  busToggleWrap: { position: 'absolute', right: 12, alignItems: 'flex-end', gap: 6 },
+  busToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    minHeight: 44,
+    paddingHorizontal: 14,
+    borderRadius: 22,
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOpacity: 0.16,
+    shadowRadius: 10,
+    elevation: 7,
+  },
+  busToggleOn: { backgroundColor: '#1F6FEB' },
+  busToggleText: { color: '#40534C', fontSize: 13, fontWeight: '800' },
+  busToggleTextOn: { color: '#FFFFFF' },
+  busError: {
+    maxWidth: 260,
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+    borderRadius: 10,
+    color: '#B42318',
+    backgroundColor: '#FFF3F1',
+    fontSize: 12,
+    textAlign: 'right',
+    overflow: 'hidden',
+  },
   panel: {
     position: 'absolute',
     left: 12,
