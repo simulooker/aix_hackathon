@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import WebView, { WebViewMessageEvent } from 'react-native-webview';
 
@@ -14,6 +14,7 @@ type KakaoMapProps = {
   onMapPress?: (point: RoutePoint) => void;
   searchRequest?: { query: string; requestId: number };
   onSearchResults?: (results: KakaoPlace[]) => void;
+  recenterRequest?: number;
   style?: StyleProp<ViewStyle>;
 };
 
@@ -38,10 +39,23 @@ export function KakaoMap({
   onMapPress,
   searchRequest,
   onSearchResults,
+  recenterRequest,
   style,
 }: KakaoMapProps) {
   const apiKey = process.env.EXPO_PUBLIC_KAKAO_MAP_KEY ?? '';
   const [mapError, setMapError] = useState<string>();
+  const webViewRef = useRef<WebView>(null);
+
+  useEffect(() => {
+    if (!recenterRequest || !currentLocation) return;
+    webViewRef.current?.injectJavaScript(`
+      if (window.__withyouMap && window.kakao && window.kakao.maps) {
+        window.__withyouMap.setCenter(new window.kakao.maps.LatLng(${currentLocation.latitude}, ${currentLocation.longitude}));
+        window.__withyouMap.setLevel(4);
+      }
+      true;
+    `);
+  }, [currentLocation, recenterRequest]);
 
   const html = useMemo(() => {
     const data = JSON.stringify({ center, currentLocation, destination, hazards, route, searchRequest }).replace(/</g, '\\u003c');
@@ -82,6 +96,7 @@ export function KakaoMap({
         send('ready', {});
         const center = new kakao.maps.LatLng(data.center.latitude, data.center.longitude);
         const map = new kakao.maps.Map(document.getElementById('map'), { center, level: 4 });
+        window.__withyouMap = map;
 
         function marker(point, title) {
           if (!point) return;
@@ -180,6 +195,7 @@ export function KakaoMap({
   return (
     <View style={[styles.container, style]}>
       <WebView
+        ref={webViewRef}
         style={styles.webview}
         source={{ html, baseUrl: KAKAO_BASE_URL }}
         originWhitelist={['https://*']}

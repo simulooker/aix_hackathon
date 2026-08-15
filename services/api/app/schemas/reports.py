@@ -9,7 +9,7 @@ from app.schemas.detection import Detection
 class ReportResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
-    report_id: UUID
+    report_id: UUID | None = None
     status: str
     filename: str | None
     latitude: float

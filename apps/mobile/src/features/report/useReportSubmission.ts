@@ -1,12 +1,12 @@
 import { useCallback, useState } from 'react';
 
 import { submitReport } from '@/src/services/api';
-import type { AIAnalysisResponse } from '@/src/types/hazard';
+import type { ReportResponse } from '@/src/types/hazard';
 
 export type ReportSubmissionState =
   | { status: 'idle' }
   | { status: 'submitting' }
-  | { status: 'success'; result: AIAnalysisResponse }
+  | { status: 'success'; result: ReportResponse }
   | { status: 'error'; message: string };
 
 export function useReportSubmission() {

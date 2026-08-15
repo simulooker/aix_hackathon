@@ -1,4 +1,4 @@
-export type HazardStatus = 'pending' | 'verified' | 'rejected' | 'resolved';
+export type HazardStatus = 'pending' | 'verified' | 'rejected' | 'resolved' | 'not_saved';
 export type RiskLevel = 'none' | 'low' | 'medium' | 'high';
 
 export type HazardReport = {
@@ -13,7 +13,7 @@ export type HazardReport = {
 };
 
 export type ReportResponse = {
-  report_id: string;
+  report_id: string | null;
   status: HazardStatus;
   filename: string | null;
   latitude: number;

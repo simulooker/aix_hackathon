@@ -15,8 +15,10 @@ from fastapi import (
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
+from app.core.security import get_current_user
 from app.db.session import get_db
 from app.models.report import HazardReport
+from app.models.user import User
 from app.schemas.reports import NearbyReport, ReportResponse
 from app.services.ai_service import AIModelUnavailable, get_ai_service
 from app.services.storage_service import upload_report_image
@@ -24,6 +26,7 @@ from app.services.storage_service import upload_report_image
 router = APIRouter(prefix="/reports", tags=["reports"])
 RISK_SEVERITY = {"none": 0.0, "low": 0.25, "medium": 0.6, "high": 1.0}
 DatabaseSession = Annotated[Session, Depends(get_db)]
+AuthenticatedUser = Annotated[User, Depends(get_current_user)]
 
 
 @router.post("", response_model=ReportResponse, status_code=status.HTTP_201_CREATED)
@@ -32,6 +35,7 @@ async def create_report(
     latitude: Annotated[float, Form(ge=-90, le=90)],
     longitude: Annotated[float, Form(ge=-180, le=180)],
     db: DatabaseSession,
+    _current_user: AuthenticatedUser,
 ) -> ReportResponse:
     if image.content_type not in {"image/jpeg", "image/png", "image/webp"}:
         raise HTTPException(415, "JPEG, PNG, WEBP 이미지만 업로드할 수 있습니다.")
@@ -40,18 +44,44 @@ async def create_report(
         raise HTTPException(413, "이미지는 15MB 이하여야 합니다.")
     try:
         analysis = await run_in_threadpool(get_ai_service().analyze, contents)
+    except AIModelUnavailable as exc:
+        raise HTTPException(503, str(exc)) from exc
+
+    on_walkway = [item for item in analysis["detections"] if item["on_walkway"]]
+    has_reportable_hazard = (
+        analysis["walkway_detected"]
+        and analysis["overall_risk"] != "none"
+        and bool(on_walkway)
+    )
+    if not has_reportable_hazard:
+        return ReportResponse(
+            report_id=None,
+            status="not_saved",
+            filename=image.filename,
+            latitude=latitude,
+            longitude=longitude,
+            hazard_type=None,
+            confidence=None,
+            severity=0,
+            overall_risk="none",
+            photo_path=None,
+            model_ready=analysis["model_ready"],
+            walkway_detected=analysis["walkway_detected"],
+            obstacles_detected=analysis["obstacles_detected"],
+            obstacles_on_walkway=0,
+            detections=analysis["detections"],
+        )
+
+    try:
         photo_path = await upload_report_image(
             contents, image.content_type, image.filename
         )
-    except AIModelUnavailable as exc:
-        raise HTTPException(503, str(exc)) from exc
     except httpx.HTTPError as exc:
         raise HTTPException(
             502,
             "제보 사진을 Supabase Storage에 저장하지 못했습니다. 버킷 설정을 확인해 주세요.",
         ) from exc
 
-    on_walkway = [item for item in analysis["detections"] if item["on_walkway"]]
     most_serious = max(
         on_walkway, key=lambda item: RISK_SEVERITY[item["risk"]], default=None
     )
@@ -59,7 +89,7 @@ async def create_report(
     report = HazardReport(
         latitude=latitude,
         longitude=longitude,
-        hazard_type=most_serious["label"] if most_serious else None,
+        hazard_type=most_serious["label"],
         confidence=max((item["confidence"] for item in on_walkway), default=None),
         severity=RISK_SEVERITY[analysis["overall_risk"]],
         overall_risk=analysis["overall_risk"],

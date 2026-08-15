@@ -1,8 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
-import FontAwesome5 from '@expo/vector-icons/FontAwesome5';
 import type { Href } from 'expo-router';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -19,7 +18,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { KakaoMap, type KakaoPlace } from '@/src/components/KakaoMap';
 import { PrimaryButton } from '@/src/components/PrimaryButton';
-import { DEFAULT_REGION, ROUTE_PROFILES } from '@/src/constants/map';
+import { DEFAULT_REGION } from '@/src/constants/map';
 import { useCurrentLocation } from '@/src/features/location/useCurrentLocation';
 import { getNearbyHazards } from '@/src/services/api';
 import { useAuthStore } from '@/src/stores/auth-store';
@@ -34,11 +33,11 @@ export default function MapScreen() {
   const username = useAuthStore((state) => state.username);
   const clearUser = useAuthStore((state) => state.clearUser);
   const showHazards = usePreferencesStore((state) => state.showHazards);
+  const preferencesInitialized = usePreferencesStore((state) => state.initialized);
+  const routeProfile = usePreferencesStore((state) => state.routeProfile);
   const { coordinates, error, loading, refresh } = useCurrentLocation();
   const {
     route,
-    profile,
-    setProfile,
     fetchRoute,
     clearRoute,
     loading: routeLoading,
@@ -47,12 +46,15 @@ export default function MapScreen() {
 
   const [hazards, setHazards] = useState<HazardReport[]>([]);
   const [destination, setDestination] = useState<RoutePoint>();
+  const [mapCenter, setMapCenter] = useState<RoutePoint>();
   const [destinationName, setDestinationName] = useState('');
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string>();
   const [searchRequest, setSearchRequest] = useState<{ query: string; requestId: number }>();
   const [searchResults, setSearchResults] = useState<KakaoPlace[]>([]);
   const [accountMenuVisible, setAccountMenuVisible] = useState(false);
+  const [recenterRequest, setRecenterRequest] = useState(0);
+  const profilePromptShown = useRef(false);
 
   // 안내 화면에서 뒤로 돌아와 메인 지도로 복귀할 때 이전 경로선 초기화
   useFocusEffect(
@@ -66,9 +68,27 @@ export default function MapScreen() {
     getNearbyHazards({ ...coordinates }).then(setHazards).catch(() => setHazards([]));
   }, [coordinates]);
 
+  useEffect(() => {
+    if (!username) {
+      profilePromptShown.current = false;
+      return;
+    }
+    if (!preferencesInitialized || routeProfile || profilePromptShown.current) return;
+    profilePromptShown.current = true;
+    Alert.alert(
+      '사용자 유형을 정해 주세요',
+      '프로필 → 마이페이지 → 사용자 유형 설정에서 이용자 유형을 선택해 주세요.',
+      [
+        { text: '나중에', style: 'cancel' },
+        { text: '마이페이지로 이동', onPress: () => router.push('/my-page' as Href) },
+      ],
+    );
+  }, [preferencesInitialized, routeProfile, router, username]);
+
   const chooseDestination = (point: RoutePoint, label?: string) => {
     Keyboard.dismiss();
     setDestination(point);
+    setMapCenter(point);
     if (clearRoute) clearRoute(); // 새 목적지 선택 시 이전 경로선 즉시 삭제
 
     if (label && label !== '지도에서 선택한 위치') {
@@ -94,6 +114,13 @@ export default function MapScreen() {
 
   const findRoute = async () => {
     if (!coordinates || !destination) return;
+    if (!routeProfile) {
+      Alert.alert('사용자 유형을 정해 주세요', '마이페이지에서 이용자 유형을 먼저 설정해 주세요.', [
+        { text: '취소', style: 'cancel' },
+        { text: '마이페이지로 이동', onPress: () => router.push('/my-page' as Href) },
+      ]);
+      return;
+    }
     const result = await fetchRoute(coordinates, destination);
     if (result?.geometry.length) {
       router.push(`/navigation/${result.route_id}` as Href);
@@ -115,11 +142,30 @@ export default function MapScreen() {
     ]);
   };
 
+  const moveToCurrentLocation = async () => {
+    const latest = await refresh();
+    if (latest) {
+      setMapCenter(latest);
+      setRecenterRequest((value) => value + 1);
+    }
+  };
+
+  const openReport = () => {
+    if (!username) {
+      Alert.alert('로그인이 필요합니다', '위험사진 제보는 로그인한 사용자만 이용할 수 있습니다.', [
+        { text: '취소', style: 'cancel' },
+        { text: '로그인', onPress: () => router.push('/login' as Href) },
+      ]);
+      return;
+    }
+    router.push('/report/camera' as Href);
+  };
+
   return (
     <View style={styles.container}>
       <KakaoMap
         style={styles.map}
-        center={destination ?? coordinates ?? DEFAULT_REGION}
+        center={mapCenter ?? destination ?? coordinates ?? DEFAULT_REGION}
         currentLocation={coordinates}
         destination={destination}
         hazards={showHazards ? hazards : []}
@@ -135,6 +181,7 @@ export default function MapScreen() {
             }
           }
         }}
+        recenterRequest={recenterRequest}
       />
 
       <SafeAreaView style={styles.topArea} pointerEvents="box-none">
@@ -224,38 +271,12 @@ export default function MapScreen() {
       <View style={[styles.panel, { bottom: insets.bottom + 12 }]}>
         <View style={styles.panelHeader}>
           <View>
-            <Text style={styles.title}>이용자 유형</Text>
-            <Text style={styles.hint}>유형에 맞는 안전 경로를 찾아드려요.</Text>
+            <Text style={styles.title}>안전 경로</Text>
+            <Text style={styles.hint}>목적지를 선택하면 보행 경로를 안내해 드려요.</Text>
           </View>
-          <Pressable style={styles.locationButton} onPress={() => void refresh()}>
+          <Pressable accessibilityRole="button" accessibilityLabel="현재 위치로 이동" style={styles.locationButton} onPress={() => void moveToCurrentLocation()}>
             <Ionicons name="locate" size={22} color="#167C5A" />
           </Pressable>
-        </View>
-
-        <View style={styles.profileRow}>
-          {ROUTE_PROFILES.map((item) => {
-            const selected = profile === item.value;
-            return (
-              <Pressable
-                key={item.value}
-                style={[styles.profileCard, selected && styles.profileCardActive]}
-                onPress={() => setProfile(item.value)}>
-                {item.value === 'general' ? (
-                  <Ionicons name="person-outline" size={21} color={selected ? '#FFFFFF' : '#167C5A'} />
-                ) : (
-                  <FontAwesome5
-                    name={item.value === 'elderly' ? 'blind' : 'wheelchair'}
-                    size={20}
-                    color={selected ? '#FFFFFF' : '#167C5A'}
-                  />
-                )}
-                <Text style={[styles.profileLabel, selected && styles.profileLabelActive]}>{item.label}</Text>
-                <Text style={[styles.profileDescription, selected && styles.profileDescriptionActive]}>
-                  {item.description}
-                </Text>
-              </Pressable>
-            );
-          })}
         </View>
 
         {loading && <Text style={styles.info}>현재 위치를 확인하고 있습니다.</Text>}
@@ -267,7 +288,7 @@ export default function MapScreen() {
           disabled={!destination || !coordinates}
           loading={routeLoading}
         />
-        <Pressable style={styles.reportButton} onPress={() => router.push('/report/camera' as Href)}>
+        <Pressable style={styles.reportButton} onPress={openReport}>
           <Ionicons name="camera-outline" size={20} color="#167C5A" />
           <Text style={styles.reportText}>위험사진 제보</Text>
         </Pressable>
@@ -371,13 +392,6 @@ const styles = StyleSheet.create({
   title: { fontSize: 18, fontWeight: '800', color: '#14251F' },
   hint: { color: '#65756F', fontSize: 12, marginTop: 3 },
   locationButton: { width: 42, height: 42, borderRadius: 14, backgroundColor: '#E9F5F0', alignItems: 'center', justifyContent: 'center' },
-  profileRow: { flexDirection: 'row', gap: 8 },
-  profileCard: { flex: 1, minHeight: 88, padding: 9, borderRadius: 14, borderWidth: 1, borderColor: '#D7E4DE', backgroundColor: '#F8FBF9' },
-  profileCardActive: { backgroundColor: '#167C5A', borderColor: '#167C5A' },
-  profileLabel: { color: '#263D35', fontWeight: '800', fontSize: 12.5, marginTop: 4 },
-  profileLabelActive: { color: '#FFFFFF' },
-  profileDescription: { color: '#70817B', fontSize: 9.5, marginTop: 2 },
-  profileDescriptionActive: { color: '#D9F3E8' },
   info: { color: '#52645E', fontSize: 12 },
   error: { color: '#B42318', fontSize: 12 },
   reportButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingVertical: 5 },

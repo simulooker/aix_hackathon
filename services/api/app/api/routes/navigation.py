@@ -73,12 +73,16 @@ async def create_route(payload: RouteRequest, db: DatabaseSession) -> RouteRespo
         )
         return RouteResponse(
             route_id=str(uuid4()),
-            status="ready",
-            message="OpenStreetMap 보행로를 이용해 계산한 경로입니다.",
+            status="fallback" if result.used_fallback else "ready",
+            message=(
+                "실제 보행 경로를 찾지 못했습니다. 출발지나 목적지를 가까운 보행로 쪽으로 다시 선택해 주세요."
+                if result.used_fallback
+                else "최단 보행 경로와 위험도를 함께 비교해 계산한 경로입니다."
+            ),
             geometry=result.geometry,
             distance_m=result.distance_m,
             hazards_avoided=result.hazards_avoided,
-            used_fallback_graph=False,
+            used_fallback_graph=result.used_fallback,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
