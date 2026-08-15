@@ -9,9 +9,7 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-# 발급받으신 OpenRouteService API Key
-DEFAULT_ORS_API_KEY = "eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjI3YmRiNmIxNjFmODQwZDI5MzMzNzBjNjBlOTQzZGZkIiwiaCI6Im11cm11cjY0In0="
-ORS_API_KEY = getattr(settings, "ors_api_key", None) or DEFAULT_ORS_API_KEY
+ORS_API_KEY = settings.ors_api_key or ""
 
 # ORS 공식 v2 기본 엔드포인트
 ORS_BASE_URL = "https://api.openrouteservice.org"
@@ -160,6 +158,8 @@ def calculate_walking_route(
     url = f"{ORS_BASE_URL}/v2/directions/{ors_profile}/geojson"
 
     raw_key = (ORS_API_KEY or "").strip()
+    if not raw_key:
+        raise RuntimeError("ORS_API_KEY가 설정되지 않았습니다.")
     headers = {
         "Authorization": f"Bearer {raw_key}" if not raw_key.startswith("Bearer ") else raw_key,
         "Content-Type": "application/json; charset=utf-8",

@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     surface_model_path: str = "models/surface-seg-best.pt"
     obstacle_model_path: str = "models/obstacle-detect-best.pt"
     ai_device: str = "cpu"
-    tmap_api_key: str | None = None
+    ors_api_key: str | None = None
 
     smtp_host: str = "smtp.gmail.com"
     smtp_port: int = 587
