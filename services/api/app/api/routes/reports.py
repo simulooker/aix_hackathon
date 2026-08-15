@@ -37,6 +37,8 @@ async def create_report(
     db: DatabaseSession,
     _current_user: AuthenticatedUser,
 ) -> ReportResponse:
+    if abs(latitude) < 0.000001 and abs(longitude) < 0.000001:
+        raise HTTPException(422, "사진의 올바른 촬영 위치를 확인할 수 없습니다.")
     if image.content_type not in {"image/jpeg", "image/png", "image/webp"}:
         raise HTTPException(415, "JPEG, PNG, WEBP 이미지만 업로드할 수 있습니다.")
     contents = await image.read(15 * 1024 * 1024 + 1)
