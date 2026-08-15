@@ -9,8 +9,12 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-TMAP_API_KEY = settings.tmap_api_key or ""
-TMAP_PEDESTRIAN_URL = "https://apis.openapi.sk.com/tmap/routes/pedestrian?version=1"
+# 발급받으신 OpenRouteService API Key
+DEFAULT_ORS_API_KEY = "eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjI3YmRiNmIxNjFmODQwZDI5MzMzNzBjNjBlOTQzZGZkIiwiaCI6Im11cm11cjY0In0="
+ORS_API_KEY = getattr(settings, "ors_api_key", None) or DEFAULT_ORS_API_KEY
+
+#  신규 HeiGIT 공식 ORS 엔드포인트로 변경
+ORS_DIRECTIONS_URL = "https://api.heigit.org/openrouteservice/v2/directions"
 MAX_WALKING_DISTANCE_M = 10_000
 
 
@@ -44,7 +48,7 @@ def distance_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> float
 def _nearby_hazards(
     geometry: list[dict[str, float]], hazards: list[Any], radius_m: float = 25
 ) -> tuple[Any, ...]:
-    """Return unique reports close enough to affect this candidate route."""
+    """경로 선 주변 반경 내에 존재하는 위험 요소들을 추출합니다."""
     nearby: list[Any] = []
     for hazard in hazards:
         h_lat = getattr(hazard, "latitude", None)
@@ -59,23 +63,30 @@ def _nearby_hazards(
     return tuple(nearby)
 
 
-def _parse_tmap_candidate(
+def _parse_ors_candidate(
     data: dict[str, Any], hazards: list[Any]
 ) -> _RouteCandidate:
-    geometry: list[dict[str, float]] = []
-    total_distance = 0.0
-    for feature in data.get("features", []):
-        geom = feature.get("geometry", {})
-        if geom.get("type") == "LineString":
-            for lon, lat in geom.get("coordinates", []):
-                point = {"latitude": float(lat), "longitude": float(lon)}
-                if not geometry or geometry[-1] != point:
-                    geometry.append(point)
-        value = feature.get("properties", {}).get("totalDistance")
-        if value is not None:
-            total_distance = float(value)
-    if len(geometry) < 3:
-        raise ValueError("실제 보행 경로를 찾지 못했습니다.")
+    features = data.get("features", [])
+    if not features:
+        raise ValueError("OpenRouteService에서 경로 features를 찾지 못했습니다.")
+
+    feature = features[0]
+    coordinates = feature.get("geometry", {}).get("coordinates", [])
+    if len(coordinates) < 2:
+        raise ValueError("유효한 좌표 목록이 부족합니다.")
+
+    # GeoJSON: [경도(lon), 위도(lat)] -> dict: {latitude, longitude}
+    geometry = [
+        {"latitude": float(lat), "longitude": float(lon)}
+        for lon, lat in coordinates
+    ]
+
+    total_distance = (
+        feature.get("properties", {})
+        .get("summary", {})
+        .get("distance", 0.0)
+    )
+
     if total_distance <= 0:
         total_distance = sum(
             distance_meters(
@@ -86,38 +97,12 @@ def _parse_tmap_candidate(
             )
             for index, point in enumerate(geometry[1:], start=1)
         )
+
     return _RouteCandidate(
         geometry=geometry,
         distance_m=round(total_distance),
         hazards=_nearby_hazards(geometry, hazards),
     )
-
-
-def _candidate_score(candidate: _RouteCandidate, profile: str) -> float:
-    penalty_per_full_risk = {
-        "general": 35,
-        "elderly": 80,
-        "wheelchair": 130,
-    }[profile]
-    risk = sum(max(0.0, min(1.0, float(getattr(item, "severity", 0) or 0))) for item in candidate.hazards)
-    return candidate.distance_m + risk * penalty_per_full_risk
-
-
-def _select_candidate(
-    candidates: list[_RouteCandidate], profile: str, prefer_safe_route: bool
-) -> tuple[_RouteCandidate, int]:
-    shortest = min(candidates, key=lambda item: item.distance_m)
-    if not prefer_safe_route or not any(item.hazards for item in candidates):
-        return shortest, 0
-    # Keep close to the true shortest route; safety only breaks a near-tie.
-    max_detour_ratio = {"general": 1.05, "elderly": 1.10, "wheelchair": 1.15}[profile]
-    reasonable = [
-        item
-        for item in candidates
-        if item.distance_m <= shortest.distance_m * max_detour_ratio
-    ]
-    selected = min(reasonable, key=lambda item: _candidate_score(item, profile))
-    return selected, max(0, len(shortest.hazards) - len(selected.hazards))
 
 
 def calculate_walking_route(
@@ -136,67 +121,50 @@ def calculate_walking_route(
         )
 
     hazards = hazards or []
+    ors_profile = "wheelchair" if profile == "wheelchair" else "foot-walking"
+    url = f"{ORS_DIRECTIONS_URL}/{ors_profile}/geojson"
 
+    raw_key = (ORS_API_KEY or "").strip()
     headers = {
-        "appKey": TMAP_API_KEY,
-        "Content-Type": "application/json",
+        "Authorization": raw_key,
+        "Content-Type": "application/json; charset=utf-8",
+        "Accept": "application/json, application/geo+json",
     }
 
-    base_payload = {
-        "startX": origin.longitude,
-        "startY": origin.latitude,
-        "endX": destination.longitude,
-        "endY": destination.latitude,
-        "startName": "출발지",
-        "endName": "도착지",
-        "reqCoordType": "WGS84GEO",
-        "resCoordType": "WGS84GEO",
-        "sort": "index",
+    body = {
+        "coordinates": [
+            [float(origin.longitude), float(origin.latitude)],
+            [float(destination.longitude), float(destination.latitude)],
+        ],
+        "radiuses": [-1, -1],
     }
 
     try:
-        if not TMAP_API_KEY:
-            raise RuntimeError("TMAP_API_KEY가 설정되지 않았습니다.")
-        candidates: list[_RouteCandidate] = []
-        signatures: set[tuple[tuple[float, float], ...]] = set()
-        with httpx.Client(timeout=12.0) as client:
-            # 10 is the pedestrian shortest-distance option. The other options
-            # provide alternatives that can be compared against reported risks.
-            for search_option in (10, 0, 4):
-                try:
-                    response = client.post(
-                        TMAP_PEDESTRIAN_URL,
-                        headers=headers,
-                        json={**base_payload, "searchOption": search_option},
-                    )
-                    response.raise_for_status()
-                    candidate = _parse_tmap_candidate(response.json(), hazards)
-                    signature = tuple(
-                        (round(point["latitude"], 5), round(point["longitude"], 5))
-                        for point in candidate.geometry[:: max(1, len(candidate.geometry) // 20)]
-                    )
-                    if signature not in signatures:
-                        signatures.add(signature)
-                        candidates.append(candidate)
-                except (httpx.HTTPError, ValueError) as exc:
-                    logger.warning("Tmap route option %s failed: %s", search_option, exc)
-        if not candidates:
-            raise RuntimeError("Tmap에서 실제 보행 경로를 반환하지 않았습니다.")
-
-        selected, avoided_count = _select_candidate(
-            candidates, profile, prefer_safe_route and bool(hazards)
-        )
+        with httpx.Client(timeout=15.0) as client:
+            response = client.post(
+                url,
+                headers=headers,
+                json=body,
+            )
+            if response.status_code != 200:
+                logger.error(
+                    "❌ ORS API 호출 실패 [%s]: %s",
+                    response.status_code,
+                    response.text,
+                )
+            response.raise_for_status()
+            candidate = _parse_ors_candidate(response.json(), hazards)
 
         return RouteResult(
-            geometry=selected.geometry,
-            distance_m=selected.distance_m,
-            hazards_avoided=avoided_count,
-            hazards_on_route=selected.hazards,
+            geometry=candidate.geometry,
+            distance_m=candidate.distance_m,
+            hazards_avoided=0,
+            hazards_on_route=candidate.hazards,
             used_fallback=False,
         )
 
     except Exception as exc:  # noqa: BLE001
-        logger.error("Tmap 보행자 API 호출 실패: %s", exc)
+        logger.error("❌ OpenRouteService 처리 중 에러 발생: %s", exc)
         return RouteResult(
             geometry=[
                 {"latitude": origin.latitude, "longitude": origin.longitude},
