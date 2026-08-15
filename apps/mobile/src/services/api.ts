@@ -51,6 +51,34 @@ export async function login(username: string, password: string): Promise<string>
   return result.access_token;
 }
 
+export type CurrentUser = {
+  id: number;
+  username: string;
+  email: string;
+};
+
+function authenticatedHeaders(extra?: Record<string, string>): Record<string, string> {
+  if (!accessToken) throw new Error('로그인이 필요합니다.');
+  return { ...extra, Authorization: `Bearer ${accessToken}` };
+}
+
+export async function getCurrentUser(): Promise<CurrentUser> {
+  const response = await fetch(`${API_BASE_URL}/users/me`, {
+    headers: authenticatedHeaders(),
+  });
+  if (!response.ok) throw new Error(await errorMessage(response));
+  return response.json();
+}
+
+export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/users/me/password`, {
+    method: 'PUT',
+    headers: authenticatedHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+  });
+  if (!response.ok) throw new Error(await errorMessage(response));
+}
+
 export async function sendEmailOtp(email: string): Promise<void> {
   const response = await fetch(`${API_BASE_URL}/send-otp`, {
     method: 'POST',

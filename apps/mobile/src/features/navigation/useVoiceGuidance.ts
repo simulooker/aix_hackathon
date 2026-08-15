@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { speak } from '@/src/features/speech/speak';
 import type { RoutePoint, RouteResponse } from '@/src/types/route';
+import { usePreferencesStore } from '@/src/stores/preferences-store';
 
 import { buildSteps, distanceMeters } from './routeSteps';
 
@@ -11,7 +12,8 @@ export function useVoiceGuidance(route: RouteResponse | undefined) {
   const [stepIndex, setStepIndex] = useState(0);
   const [started, setStarted] = useState(false);
   const [arrived, setArrived] = useState(false);
-  const [voiceEnabled, setVoiceEnabled] = useState(true);
+  const voiceEnabled = usePreferencesStore((state) => state.voiceGuidance);
+  const setVoiceEnabled = usePreferencesStore((state) => state.setVoiceGuidance);
   const [currentLocation, setCurrentLocation] = useState<RoutePoint>();
   const subscription = useRef<Location.LocationSubscription | undefined>(undefined);
   const voiceEnabledRef = useRef(true);

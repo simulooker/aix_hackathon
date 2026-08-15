@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
   Alert,
   Keyboard,
+  Modal,
   Pressable,
   SafeAreaView,
   StyleSheet,
@@ -22,6 +23,7 @@ import { DEFAULT_REGION, ROUTE_PROFILES } from '@/src/constants/map';
 import { useCurrentLocation } from '@/src/features/location/useCurrentLocation';
 import { getNearbyHazards } from '@/src/services/api';
 import { useAuthStore } from '@/src/stores/auth-store';
+import { usePreferencesStore } from '@/src/stores/preferences-store';
 import { useRouteStore } from '@/src/stores/route-store';
 import type { HazardReport } from '@/src/types/hazard';
 import type { RoutePoint } from '@/src/types/route';
@@ -31,6 +33,7 @@ export default function MapScreen() {
   const insets = useSafeAreaInsets();
   const username = useAuthStore((state) => state.username);
   const clearUser = useAuthStore((state) => state.clearUser);
+  const showHazards = usePreferencesStore((state) => state.showHazards);
   const { coordinates, error, loading, refresh } = useCurrentLocation();
   const {
     route,
@@ -49,6 +52,7 @@ export default function MapScreen() {
   const [searchError, setSearchError] = useState<string>();
   const [searchRequest, setSearchRequest] = useState<{ query: string; requestId: number }>();
   const [searchResults, setSearchResults] = useState<KakaoPlace[]>([]);
+  const [accountMenuVisible, setAccountMenuVisible] = useState(false);
 
   // 안내 화면에서 뒤로 돌아와 메인 지도로 복귀할 때 이전 경로선 초기화
   useFocusEffect(
@@ -101,9 +105,13 @@ export default function MapScreen() {
       router.push('/login' as Href);
       return;
     }
-    Alert.alert('계정', `${username}님으로 로그인되어 있습니다.`, [
+    setAccountMenuVisible(true);
+  };
+
+  const logout = () => {
+    Alert.alert('로그아웃', '위드유에서 로그아웃할까요?', [
       { text: '취소', style: 'cancel' },
-      { text: '로그아웃', style: 'destructive', onPress: clearUser },
+      { text: '로그아웃', style: 'destructive', onPress: () => { clearUser(); setAccountMenuVisible(false); } },
     ]);
   };
 
@@ -114,7 +122,7 @@ export default function MapScreen() {
         center={destination ?? coordinates ?? DEFAULT_REGION}
         currentLocation={coordinates}
         destination={destination}
-        hazards={hazards}
+        hazards={showHazards ? hazards : []}
         route={route?.geometry}
         onMapPress={(point) => chooseDestination(point, '지도에서 선택한 위치')}
         searchRequest={searchRequest}
@@ -157,11 +165,13 @@ export default function MapScreen() {
               </Pressable>
             )}
           </View>
-          <Pressable style={styles.accountButton} onPress={openAccount}>
-            <Ionicons name={username ? 'person' : 'log-in-outline'} size={19} color="#FFFFFF" />
-            <Text style={styles.accountText} numberOfLines={1}>
-              {username ?? '로그인'}
-            </Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={username ? '계정 메뉴 열기' : '로그인'}
+            style={[styles.accountButton, username && styles.accountButtonLoggedIn]}
+            onPress={openAccount}>
+            <Ionicons name={username ? 'person' : 'log-in-outline'} size={username ? 24 : 19} color="#FFFFFF" />
+            {!username && <Text style={styles.accountText}>로그인</Text>}
           </Pressable>
         </View>
         {searchError && <Text style={styles.searchError}>{searchError}</Text>}
@@ -184,6 +194,32 @@ export default function MapScreen() {
           </View>
         )}
       </SafeAreaView>
+
+      <Modal visible={accountMenuVisible} transparent animationType="fade" onRequestClose={() => setAccountMenuVisible(false)}>
+        <Pressable style={styles.menuBackdrop} onPress={() => setAccountMenuVisible(false)}>
+          <Pressable style={[styles.accountMenu, { top: insets.top + 72 }]} onPress={(event) => event.stopPropagation()}>
+            <View style={styles.menuHeader}>
+              <View style={styles.menuAvatar}><Ionicons name="person" size={23} color="#FFFFFF" /></View>
+              <View><Text style={styles.menuGreeting}>안녕하세요</Text><Text style={styles.menuUsername}>{username}</Text></View>
+            </View>
+            <View style={styles.menuDivider} />
+            <Pressable style={styles.menuItem} onPress={() => { setAccountMenuVisible(false); router.push('/my-page' as Href); }}>
+              <Ionicons name="person-circle-outline" size={23} color="#263D35" />
+              <Text style={styles.menuItemText}>마이페이지</Text>
+              <Ionicons name="chevron-forward" size={18} color="#8A9893" />
+            </Pressable>
+            <Pressable style={styles.menuItem} onPress={() => { setAccountMenuVisible(false); router.push('/settings' as Href); }}>
+              <Ionicons name="settings-outline" size={22} color="#263D35" />
+              <Text style={styles.menuItemText}>설정</Text>
+              <Ionicons name="chevron-forward" size={18} color="#8A9893" />
+            </Pressable>
+            <Pressable style={styles.menuItem} onPress={logout}>
+              <Ionicons name="log-out-outline" size={22} color="#B42318" />
+              <Text style={[styles.menuItemText, styles.logoutText]}>로그아웃</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       <View style={[styles.panel, { bottom: insets.bottom + 12 }]}>
         <View style={styles.panelHeader}>
@@ -272,7 +308,18 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     elevation: 5,
   },
+  accountButtonLoggedIn: { width: 52, paddingHorizontal: 0 },
   accountText: { color: '#FFFFFF', fontWeight: '800', maxWidth: 65 },
+  menuBackdrop: { flex: 1, backgroundColor: 'rgba(12, 28, 22, 0.28)' },
+  accountMenu: { position: 'absolute', right: 14, width: 232, padding: 10, borderRadius: 18, backgroundColor: '#FFFFFF', elevation: 12, shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 14 },
+  menuHeader: { flexDirection: 'row', alignItems: 'center', gap: 11, padding: 9 },
+  menuAvatar: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center', borderRadius: 21, backgroundColor: '#167C5A' },
+  menuGreeting: { color: '#71817B', fontSize: 11 },
+  menuUsername: { maxWidth: 145, marginTop: 2, color: '#14251F', fontSize: 15, fontWeight: '900' },
+  menuDivider: { height: StyleSheet.hairlineWidth, marginVertical: 5, backgroundColor: '#DCE7E2' },
+  menuItem: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 10, borderRadius: 12 },
+  menuItemText: { flex: 1, color: '#263D35', fontSize: 14, fontWeight: '700' },
+  logoutText: { color: '#B42318' },
   searchError: {
     alignSelf: 'center',
     marginTop: 8,
