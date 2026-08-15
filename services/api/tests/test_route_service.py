@@ -18,14 +18,24 @@ def test_general_profile_rejects_excessive_detour() -> None:
     assert avoided == 0
 
 
-def test_elderly_profile_can_choose_reasonable_safer_detour() -> None:
+def test_general_profile_accepts_only_a_small_safer_detour() -> None:
+    shortest = candidate(100, [1.0])
+    safer = candidate(104, [])
+
+    selected, avoided = _select_candidate([shortest, safer], "general", True)
+
+    assert selected is safer
+    assert avoided == 1
+
+
+def test_elderly_profile_rejects_twenty_percent_detour() -> None:
     shortest = candidate(100, [1.0])
     safer = candidate(120, [])
 
     selected, avoided = _select_candidate([shortest, safer], "elderly", True)
 
-    assert selected is safer
-    assert avoided == 1
+    assert selected is shortest
+    assert avoided == 0
 
 
 def test_safety_disabled_always_uses_shortest_candidate() -> None:

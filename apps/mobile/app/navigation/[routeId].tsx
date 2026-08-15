@@ -15,6 +15,12 @@ const maneuverIcon: Record<Maneuver, keyof typeof MaterialCommunityIcons.glyphMa
   right: 'arrow-right-top-bold',
 };
 
+function formatDistance(distanceM: number): string {
+  if (distanceM < 1000) return `약 ${Math.max(0, Math.round(distanceM))}m`;
+  const kilometers = distanceM / 1000;
+  return `약 ${kilometers < 10 ? kilometers.toFixed(1) : Math.round(kilometers)}km`;
+}
+
 function StepRow({ step, mode }: { step?: NavigationStep; mode: 'previous' | 'current' | 'next' }) {
   const title = mode === 'previous' ? '이전 안내' : mode === 'current' ? '현재 안내' : '다음 안내';
   return (
@@ -46,10 +52,10 @@ export default function NavigationScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <KakaoMap style={styles.map} center={guidance.currentLocation ?? origin} currentLocation={guidance.currentLocation ?? origin} destination={destination} route={route.geometry} />
+      <KakaoMap style={styles.map} center={guidance.currentLocation ?? origin} currentLocation={guidance.currentLocation ?? origin} destination={destination} route={route.geometry} hazards={route.hazards_on_route ?? []} />
       <View style={styles.panel}>
         <View style={styles.headerRow}>
-          <View><Text style={styles.title}>안전 경로 안내</Text><Text style={styles.body}>약 {Math.round(route.distance_m)}m</Text></View>
+          <View><Text style={styles.title}>안전 경로 안내</Text><Text style={styles.body}>남은 거리 {formatDistance(guidance.remainingDistanceM)}</Text></View>
           <View style={styles.voiceRow}><MaterialCommunityIcons name={guidance.voiceEnabled ? 'volume-high' : 'volume-off'} size={21} color="#263D35" /><Text style={styles.voiceText}>음성</Text><Switch value={guidance.voiceEnabled} onValueChange={guidance.setVoiceEnabled} trackColor={{ false: '#CBD5D1', true: '#8BC8B1' }} thumbColor={guidance.voiceEnabled ? '#167C5A' : '#FFF'} /></View>
         </View>
 

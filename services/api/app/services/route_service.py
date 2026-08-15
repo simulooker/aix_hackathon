@@ -19,6 +19,7 @@ class RouteResult:
     geometry: list[dict[str, float]]
     distance_m: float
     hazards_avoided: int
+    hazards_on_route: tuple[Any, ...] = ()
     used_fallback: bool = False
 
 
@@ -94,9 +95,9 @@ def _parse_tmap_candidate(
 
 def _candidate_score(candidate: _RouteCandidate, profile: str) -> float:
     penalty_per_full_risk = {
-        "general": 80,
-        "elderly": 180,
-        "wheelchair": 260,
+        "general": 35,
+        "elderly": 80,
+        "wheelchair": 130,
     }[profile]
     risk = sum(max(0.0, min(1.0, float(getattr(item, "severity", 0) or 0))) for item in candidate.hazards)
     return candidate.distance_m + risk * penalty_per_full_risk
@@ -108,7 +109,8 @@ def _select_candidate(
     shortest = min(candidates, key=lambda item: item.distance_m)
     if not prefer_safe_route or not any(item.hazards for item in candidates):
         return shortest, 0
-    max_detour_ratio = {"general": 1.15, "elderly": 1.25, "wheelchair": 1.35}[profile]
+    # Keep close to the true shortest route; safety only breaks a near-tie.
+    max_detour_ratio = {"general": 1.05, "elderly": 1.10, "wheelchair": 1.15}[profile]
     reasonable = [
         item
         for item in candidates
@@ -189,6 +191,7 @@ def calculate_walking_route(
             geometry=selected.geometry,
             distance_m=selected.distance_m,
             hazards_avoided=avoided_count,
+            hazards_on_route=selected.hazards,
             used_fallback=False,
         )
 
@@ -201,5 +204,6 @@ def calculate_walking_route(
             ],
             distance_m=round(direct_distance),
             hazards_avoided=0,
+            hazards_on_route=(),
             used_fallback=True,
         )

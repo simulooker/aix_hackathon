@@ -2,6 +2,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from app.schemas.reports import NearbyReport
+
 
 class Point(BaseModel):
     latitude: float = Field(ge=-90, le=90)
@@ -22,4 +24,5 @@ class RouteResponse(BaseModel):
     geometry: list[Point]
     distance_m: float
     hazards_avoided: int
+    hazards_on_route: list[NearbyReport] = Field(default_factory=list)
     used_fallback_graph: bool

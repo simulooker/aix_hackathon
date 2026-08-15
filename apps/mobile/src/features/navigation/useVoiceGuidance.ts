@@ -15,6 +15,7 @@ export function useVoiceGuidance(route: RouteResponse | undefined) {
   const voiceEnabled = usePreferencesStore((state) => state.voiceGuidance);
   const setVoiceEnabled = usePreferencesStore((state) => state.setVoiceGuidance);
   const [currentLocation, setCurrentLocation] = useState<RoutePoint>();
+  const [remainingDistanceM, setRemainingDistanceM] = useState(route?.distance_m ?? 0);
   const subscription = useRef<Location.LocationSubscription | undefined>(undefined);
   const voiceEnabledRef = useRef(true);
   const announcedStep = useRef(-1);
@@ -54,6 +55,11 @@ export function useVoiceGuidance(route: RouteResponse | undefined) {
         nearestIndex = index;
       }
     });
+    let remaining = distanceMeters(point, route.geometry[nearestIndex]);
+    for (let index = nearestIndex; index < route.geometry.length - 1; index += 1) {
+      remaining += distanceMeters(route.geometry[index], route.geometry[index + 1]);
+    }
+    setRemainingDistanceM(remaining);
     const nextIndex = Math.max(0, steps.findIndex((step) => step.pointIndex >= nearestIndex));
     setStepIndex(nextIndex);
     if (announcedStep.current !== nextIndex && steps[nextIndex]) {
@@ -76,5 +82,5 @@ export function useVoiceGuidance(route: RouteResponse | undefined) {
     );
   };
 
-  return { steps, stepIndex, started, arrived, voiceEnabled, setVoiceEnabled, currentLocation, startGuidance };
+  return { steps, stepIndex, started, arrived, voiceEnabled, setVoiceEnabled, currentLocation, remainingDistanceM, startGuidance };
 }

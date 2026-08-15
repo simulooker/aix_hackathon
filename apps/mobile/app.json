@@ -5,7 +5,7 @@
     "version": "1.1.0",
     "description": "AI 위험 분석과 이용자 맞춤형 안전 보행 경로를 제공하는 위드유 앱",
     "orientation": "portrait",
-    "icon": "./assets/images/ai-safe-route-logo.png",
+    "icon": "./assets/images/ai-safe-route-logo-v4.png",
     "scheme": "aisafeway",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -22,7 +22,7 @@
       "package": "com.simulooker.aisaferoute",
       "adaptiveIcon": {
         "backgroundColor": "#DDF1E8",
-        "foregroundImage": "./assets/images/ai-safe-route-logo.png"
+        "foregroundImage": "./assets/images/ai-safe-route-logo-v4.png"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
@@ -36,7 +36,7 @@
     },
     "web": {
       "output": "static",
-      "favicon": "./assets/images/ai-safe-route-logo.png"
+      "favicon": "./assets/images/ai-safe-route-logo-v4.png"
     },
     "plugins": [
       "expo-router",
@@ -56,7 +56,7 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/ai-safe-route-logo.png",
+          "image": "./assets/images/ai-safe-route-logo-v4.png",
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#DDF1E8",

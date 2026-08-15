@@ -122,7 +122,8 @@ export function KakaoMap({
             strokeColor: color,
             strokeOpacity: 0.9,
             fillColor: color,
-            fillOpacity: 0.4
+            fillOpacity: 0.85,
+            zIndex: 5
           });
         });
 

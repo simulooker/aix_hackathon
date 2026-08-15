@@ -82,6 +82,7 @@ async def create_route(payload: RouteRequest, db: DatabaseSession) -> RouteRespo
             geometry=result.geometry,
             distance_m=result.distance_m,
             hazards_avoided=result.hazards_avoided,
+            hazards_on_route=list(result.hazards_on_route),
             used_fallback_graph=result.used_fallback,
         )
     except ValueError as exc:
@@ -104,5 +105,6 @@ async def create_route(payload: RouteRequest, db: DatabaseSession) -> RouteRespo
                 )
             ),
             hazards_avoided=0,
+            hazards_on_route=[],
             used_fallback_graph=True,
         )

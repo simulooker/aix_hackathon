@@ -33,7 +33,7 @@ export default function LoginScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.logoBackground}>
-        <Image source={require('../assets/images/ai-safe-route-logo.png')} style={styles.logo} />
+        <Image source={require('../assets/images/ai-safe-route-logo-v4.png')} style={styles.logo} />
       </View>
       <Text style={styles.title}>로그인</Text>
       <Text style={styles.description}>계정에 로그인하고 안전 경로 서비스를 이용하세요.</Text>
