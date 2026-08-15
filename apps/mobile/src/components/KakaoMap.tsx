@@ -8,6 +8,7 @@ import type { RoutePoint } from '@/src/types/route';
 type KakaoMapProps = {
   center: RoutePoint;
   currentLocation?: RoutePoint;
+  origin?: RoutePoint;
   destination?: RoutePoint;
   hazards?: HazardReport[];
   route?: RoutePoint[];
@@ -26,6 +27,7 @@ export type KakaoPlace = {
   category: string;
   latitude: number;
   longitude: number;
+  distanceM?: number;
 };
 
 const KAKAO_BASE_URL = 'https://withyou-105736498036.asia-northeast3.run.app';
@@ -33,6 +35,7 @@ const KAKAO_BASE_URL = 'https://withyou-105736498036.asia-northeast3.run.app';
 export function KakaoMap({
   center,
   currentLocation,
+  origin,
   destination,
   hazards = [],
   route = [],
@@ -58,7 +61,7 @@ export function KakaoMap({
   }, [currentLocation, recenterRequest]);
 
   const html = useMemo(() => {
-    const data = JSON.stringify({ center, currentLocation, destination, hazards, route, searchRequest }).replace(/</g, '\\u003c');
+    const data = JSON.stringify({ center, currentLocation, origin, destination, hazards, route, searchRequest }).replace(/</g, '\\u003c');
     const safeKey = apiKey.replace(/[&<>"']/g, '');
 
     return `<!doctype html>
@@ -109,6 +112,7 @@ export function KakaoMap({
         }
 
         marker(data.currentLocation, '현재 위치');
+        marker(data.origin, '출발지');
         marker(data.destination, '목적지');
 
         data.hazards.forEach(function (hazard) {
@@ -142,9 +146,36 @@ export function KakaoMap({
 
         if (data.searchRequest && data.searchRequest.query && kakao.maps.services) {
           const places = new kakao.maps.services.Places();
-          places.keywordSearch(data.searchRequest.query, function (results, searchStatus) {
-            if (searchStatus === kakao.maps.services.Status.OK) {
-              send('searchResults', { results: results.slice(0, 10).map(function (place) {
+          const searchCenter = data.currentLocation || data.center;
+          const query = data.searchRequest.query.trim().toLocaleLowerCase();
+
+          function distanceMeters(latitude, longitude) {
+            const earthRadius = 6371000;
+            const toRadians = function (value) { return value * Math.PI / 180; };
+            const latitudeDelta = toRadians(latitude - searchCenter.latitude);
+            const longitudeDelta = toRadians(longitude - searchCenter.longitude);
+            const value = Math.sin(latitudeDelta / 2) ** 2
+              + Math.cos(toRadians(searchCenter.latitude)) * Math.cos(toRadians(latitude))
+              * Math.sin(longitudeDelta / 2) ** 2;
+            return earthRadius * 2 * Math.atan2(Math.sqrt(value), Math.sqrt(1 - value));
+          }
+
+          function sendRankedResults(results) {
+            const ranked = results.map(function (place) {
+              const name = place.place_name.trim().toLocaleLowerCase();
+              const latitude = Number(place.y);
+              const longitude = Number(place.x);
+              const distance = place.distance ? Number(place.distance) : distanceMeters(latitude, longitude);
+              let matchRank = 3;
+              if (name === query) matchRank = 0;
+              else if (name.startsWith(query)) matchRank = 1;
+              else if (name.includes(query)) matchRank = 2;
+              return { place: place, matchRank: matchRank, distance: distance };
+            }).sort(function (a, b) {
+              return a.matchRank - b.matchRank || a.distance - b.distance;
+            });
+            send('searchResults', { results: ranked.map(function (item) {
+                const place = item.place;
                 return {
                   id: place.id,
                   name: place.place_name,
@@ -152,13 +183,36 @@ export function KakaoMap({
                   roadAddress: place.road_address_name,
                   category: place.category_name,
                   latitude: Number(place.y),
-                  longitude: Number(place.x)
+                  longitude: Number(place.x),
+                  distanceM: Math.round(item.distance)
                 };
               }) });
-            } else {
-              send('searchResults', { results: [] });
+          }
+
+          places.keywordSearch(data.searchRequest.query, function (results, searchStatus) {
+            if (searchStatus === kakao.maps.services.Status.OK && results.length) {
+              sendRankedResults(results);
+              return;
             }
-          }, { size: 10 });
+            if (searchStatus !== kakao.maps.services.Status.ZERO_RESULT) {
+              send('searchResults', { results: [] });
+              return;
+            }
+
+            // No nearby result: retry once without radius/location restrictions.
+            places.keywordSearch(data.searchRequest.query, function (nationwideResults, nationwideStatus) {
+              if (nationwideStatus === kakao.maps.services.Status.OK) {
+                sendRankedResults(nationwideResults);
+              } else {
+                send('searchResults', { results: [] });
+              }
+            }, { size: 15 });
+          }, {
+            size: 15,
+            location: new kakao.maps.LatLng(searchCenter.latitude, searchCenter.longitude),
+            radius: 20000,
+            sort: kakao.maps.services.SortBy.DISTANCE
+          });
         }
       });
     }
@@ -174,7 +228,7 @@ export function KakaoMap({
   </script>
 </body>
 </html>`;
-  }, [apiKey, center, currentLocation, destination, hazards, route, searchRequest]);
+  }, [apiKey, center, currentLocation, origin, destination, hazards, route, searchRequest]);
 
   const handleMessage = (event: WebViewMessageEvent) => {
     try {

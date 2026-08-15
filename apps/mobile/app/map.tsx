@@ -9,6 +9,7 @@ import {
   Modal,
   Pressable,
   SafeAreaView,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -35,7 +36,7 @@ export default function MapScreen() {
   const showHazards = usePreferencesStore((state) => state.showHazards);
   const preferencesInitialized = usePreferencesStore((state) => state.initialized);
   const routeProfile = usePreferencesStore((state) => state.routeProfile);
-  const { coordinates, error, loading, refresh } = useCurrentLocation();
+  const { coordinates, error, loading, initialized: locationInitialized, refresh } = useCurrentLocation();
   const {
     route,
     fetchRoute,
@@ -45,9 +46,12 @@ export default function MapScreen() {
   } = useRouteStore();
 
   const [hazards, setHazards] = useState<HazardReport[]>([]);
+  const [origin, setOrigin] = useState<RoutePoint>();
+  const [originName, setOriginName] = useState('현재 위치');
   const [destination, setDestination] = useState<RoutePoint>();
   const [mapCenter, setMapCenter] = useState<RoutePoint>();
   const [destinationName, setDestinationName] = useState('');
+  const [searchText, setSearchText] = useState('');
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string>();
   const [searchRequest, setSearchRequest] = useState<{ query: string; requestId: number }>();
@@ -67,6 +71,12 @@ export default function MapScreen() {
     if (!coordinates) return;
     getNearbyHazards({ ...coordinates }).then(setHazards).catch(() => setHazards([]));
   }, [coordinates]);
+
+  useEffect(() => {
+    if (!coordinates || destination || mapCenter) return;
+    setMapCenter(coordinates);
+    setRecenterRequest((value) => value + 1);
+  }, [coordinates, destination, mapCenter]);
 
   useEffect(() => {
     if (!username) {
@@ -96,6 +106,20 @@ export default function MapScreen() {
     } else {
       setDestinationName('');
     }
+    setSearchText('');
+    setSearchError(undefined);
+    setSearchResults([]);
+    setSearchRequest(undefined);
+    setSearching(false);
+  };
+
+  const chooseOrigin = (point: RoutePoint, label: string) => {
+    Keyboard.dismiss();
+    setOrigin(point);
+    setOriginName(label);
+    setMapCenter(point);
+    setSearchText('');
+    clearRoute?.();
     setSearchError(undefined);
     setSearchResults([]);
     setSearchRequest(undefined);
@@ -103,7 +127,7 @@ export default function MapScreen() {
   };
 
   const searchDestination = async () => {
-    const query = destinationName.trim();
+    const query = searchText.trim();
     if (!query) return;
     setSearching(true);
     setSearchError(undefined);
@@ -113,7 +137,8 @@ export default function MapScreen() {
   };
 
   const findRoute = async () => {
-    if (!coordinates || !destination) return;
+    const routeOrigin = origin ?? coordinates;
+    if (!routeOrigin || !destination) return;
     if (!routeProfile) {
       Alert.alert('사용자 유형을 정해 주세요', '마이페이지에서 이용자 유형을 먼저 설정해 주세요.', [
         { text: '취소', style: 'cancel' },
@@ -121,7 +146,7 @@ export default function MapScreen() {
       ]);
       return;
     }
-    const result = await fetchRoute(coordinates, destination);
+    const result = await fetchRoute(routeOrigin, destination);
     if (result?.geometry.length) {
       router.push(`/navigation/${result.route_id}` as Href);
     }
@@ -161,12 +186,23 @@ export default function MapScreen() {
     router.push('/report/camera' as Href);
   };
 
+  if (!locationInitialized) {
+    return (
+      <SafeAreaView style={styles.locationLoadingContainer}>
+        <ActivityIndicator size="large" color="#167C5A" />
+        <Text style={styles.locationLoadingTitle}>현재 위치를 확인하고 있습니다</Text>
+        <Text style={styles.locationLoadingText}>잠시만 기다려 주세요.</Text>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <View style={styles.container}>
       <KakaoMap
         style={styles.map}
         center={mapCenter ?? destination ?? coordinates ?? DEFAULT_REGION}
         currentLocation={coordinates}
+        origin={origin}
         destination={destination}
         hazards={showHazards ? hazards : []}
         route={route?.geometry}
@@ -189,16 +225,11 @@ export default function MapScreen() {
           <View style={styles.searchBox}>
             <Ionicons name="search" size={20} color="#52645E" />
             <TextInput
-              value={destinationName}
-              onChangeText={setDestinationName}
+              value={searchText}
+              onChangeText={setSearchText}
               onSubmitEditing={() => void searchDestination()}
-              placeholder={destination && !destinationName ? '지도에서 선택한 위치' : '목적지 또는 주소 입력'}
-              placeholderTextColor={destination && !destinationName ? '#167C5A' : '#71817B'}
-              onFocus={() => {
-                if (destinationName === '지도에서 선택한 위치') {
-                  setDestinationName('');
-                }
-              }}
+              placeholder="장소 또는 주소 검색"
+              placeholderTextColor="#71817B"
               autoCapitalize="none"
               autoCorrect={false}
               returnKeyType="search"
@@ -223,22 +254,42 @@ export default function MapScreen() {
         </View>
         {searchError && <Text style={styles.searchError}>{searchError}</Text>}
         {searchResults.length > 0 && (
-          <View style={styles.searchResults}>
-            {searchResults.slice(0, 6).map((place) => (
-              <Pressable
+          <ScrollView
+            style={styles.searchResults}
+            contentContainerStyle={styles.searchResultsContent}
+            keyboardShouldPersistTaps="handled"
+            nestedScrollEnabled>
+            {searchResults.map((place) => (
+              <View
                 key={place.id}
-                style={styles.searchResultItem}
-                onPress={() => chooseDestination({ latitude: place.latitude, longitude: place.longitude }, place.name)}>
+                style={styles.searchResultItem}>
                 <Ionicons name="location-outline" size={20} color="#167C5A" />
                 <View style={styles.searchResultText}>
                   <Text style={styles.searchResultName}>{place.name}</Text>
                   <Text style={styles.searchResultAddress} numberOfLines={1}>
                     {place.roadAddress || place.address}
                   </Text>
+                  {place.distanceM != null && (
+                    <Text style={styles.searchResultDistance}>
+                      {place.distanceM < 1000 ? `${Math.round(place.distanceM)}m` : `${(place.distanceM / 1000).toFixed(1)}km`} 거리
+                    </Text>
+                  )}
                 </View>
-              </Pressable>
+                <View style={styles.searchResultActions}>
+                  <Pressable
+                    style={[styles.placeActionButton, styles.originButton]}
+                    onPress={() => chooseOrigin({ latitude: place.latitude, longitude: place.longitude }, place.name)}>
+                    <Text style={styles.originButtonText}>출발</Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.placeActionButton, styles.destinationButton]}
+                    onPress={() => chooseDestination({ latitude: place.latitude, longitude: place.longitude }, place.name)}>
+                    <Text style={styles.destinationButtonText}>도착</Text>
+                  </Pressable>
+                </View>
+              </View>
             ))}
-          </View>
+          </ScrollView>
         )}
       </SafeAreaView>
 
@@ -280,12 +331,16 @@ export default function MapScreen() {
         </View>
 
         {loading && <Text style={styles.info}>현재 위치를 확인하고 있습니다.</Text>}
+        <View style={styles.selectedPlaces}>
+          <Text style={styles.selectedPlaceText} numberOfLines={1}>출발 · {originName}</Text>
+          <Text style={styles.selectedPlaceText} numberOfLines={1}>도착 · {destination ? destinationName || '지도에서 선택한 위치' : '선택하지 않음'}</Text>
+        </View>
         {error && <Text style={styles.error}>{error}</Text>}
         {routeError && <Text style={styles.error}>{routeError}</Text>}
         <PrimaryButton
           label={destination ? '안전 경로 찾기' : '목적지를 먼저 입력해 주세요'}
           onPress={() => void findRoute()}
-          disabled={!destination || !coordinates}
+          disabled={!destination || !(origin ?? coordinates)}
           loading={routeLoading}
         />
         <Pressable style={styles.reportButton} onPress={openReport}>
@@ -299,6 +354,9 @@ export default function MapScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#E7EFEB' },
+  locationLoadingContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: '#F7FAF8' },
+  locationLoadingTitle: { marginTop: 8, color: '#14251F', fontSize: 18, fontWeight: '800' },
+  locationLoadingText: { color: '#65756F', fontSize: 13 },
   map: { flex: 1 },
   topArea: { position: 'absolute', top: 0, left: 0, right: 0 },
   topRow: { flexDirection: 'row', gap: 10, paddingHorizontal: 14, paddingTop: 8 },
@@ -351,6 +409,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF3F1',
   },
   searchResults: {
+    maxHeight: 350,
     marginHorizontal: 14,
     marginTop: 6,
     borderRadius: 16,
@@ -361,6 +420,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.14,
     shadowRadius: 10,
   },
+  searchResultsContent: { paddingBottom: 4 },
   searchResultItem: {
     minHeight: 58,
     flexDirection: 'row',
@@ -374,6 +434,13 @@ const styles = StyleSheet.create({
   searchResultText: { flex: 1 },
   searchResultName: { color: '#14251F', fontWeight: '800', fontSize: 14 },
   searchResultAddress: { color: '#71817B', fontSize: 12, marginTop: 3 },
+  searchResultDistance: { color: '#167C5A', fontSize: 11, fontWeight: '700', marginTop: 2 },
+  searchResultActions: { gap: 5 },
+  placeActionButton: { minWidth: 46, paddingHorizontal: 9, paddingVertical: 7, borderRadius: 9, alignItems: 'center' },
+  originButton: { backgroundColor: '#E8F1FF' },
+  originButtonText: { color: '#245EA8', fontSize: 12, fontWeight: '800' },
+  destinationButton: { backgroundColor: '#167C5A' },
+  destinationButtonText: { color: '#FFFFFF', fontSize: 12, fontWeight: '800' },
   panel: {
     position: 'absolute',
     left: 12,
@@ -393,6 +460,8 @@ const styles = StyleSheet.create({
   hint: { color: '#65756F', fontSize: 12, marginTop: 3 },
   locationButton: { width: 42, height: 42, borderRadius: 14, backgroundColor: '#E9F5F0', alignItems: 'center', justifyContent: 'center' },
   info: { color: '#52645E', fontSize: 12 },
+  selectedPlaces: { gap: 4, padding: 10, borderRadius: 12, backgroundColor: '#F2F7F4' },
+  selectedPlaceText: { color: '#40534C', fontSize: 12, fontWeight: '700' },
   error: { color: '#B42318', fontSize: 12 },
   reportButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingVertical: 5 },
   reportText: { color: '#167C5A', fontWeight: '800' },
