@@ -51,6 +51,7 @@ export default function NavigationScreen() {
   const current = guidance.steps[guidance.stepIndex];
   const isBusRoute = route.travel_mode === 'bus' && !!route.transit_legs?.length;
   const maxGrade = route.max_grade_percent ?? 0;
+  const maxGradeDegrees = Math.atan(maxGrade / 100) * 180 / Math.PI;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -74,8 +75,8 @@ export default function NavigationScreen() {
           <View style={[styles.slopeNotice, maxGrade >= 8 && styles.slopeNoticeDanger]}>
             <MaterialCommunityIcons name="slope-uphill" size={23} color={maxGrade >= 8 ? '#B42318' : '#9A6700'} />
             <View style={styles.slopeTextWrap}>
-              <Text style={styles.slopeTitle}>경사 구간 주의 · 최대 약 {maxGrade.toFixed(1)}%</Text>
-              <Text style={styles.slopeBody}>고도 기반 추정값이므로 짧은 턱이나 급경사는 현장에서 다시 확인해 주세요.</Text>
+              <Text style={styles.slopeTitle}>경사 구간 주의 · 최대 약 {maxGradeDegrees.toFixed(1)}°</Text>
+              <Text style={styles.slopeBody}>지도 선은 약 50m씩 나눈 고도 기반 추정값입니다. 짧은 턱이나 급경사는 현장에서 다시 확인해 주세요.</Text>
             </View>
           </View>
         )}

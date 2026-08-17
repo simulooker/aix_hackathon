@@ -187,10 +187,6 @@ export default function MapScreen() {
   };
 
   const openAccount = () => {
-    if (!username) {
-      router.push('/login' as Href);
-      return;
-    }
     setAccountMenuVisible(true);
   };
 
@@ -283,11 +279,10 @@ export default function MapScreen() {
           </View>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={username ? '계정 메뉴 열기' : '로그인'}
-            style={[styles.accountButton, username && styles.accountButtonLoggedIn]}
+            accessibilityLabel="메뉴 열기"
+            style={styles.accountButton}
             onPress={openAccount}>
-            <Ionicons name={username ? 'person' : 'log-in-outline'} size={username ? 24 : 19} color="#FFFFFF" />
-            {!username && <Text style={styles.accountText}>로그인</Text>}
+            <Ionicons name="menu" size={29} color="#FFFFFF" />
           </Pressable>
         </View>
         {!!environment?.weather?.alerts.length && (
@@ -354,25 +349,44 @@ export default function MapScreen() {
       <Modal visible={accountMenuVisible} transparent animationType="fade" onRequestClose={() => setAccountMenuVisible(false)}>
         <Pressable style={styles.menuBackdrop} onPress={() => setAccountMenuVisible(false)}>
           <Pressable style={[styles.accountMenu, { top: insets.top + 72 }]} onPress={(event) => event.stopPropagation()}>
-            <View style={styles.menuHeader}>
-              <View style={styles.menuAvatar}><Ionicons name="person" size={23} color="#FFFFFF" /></View>
-              <View><Text style={styles.menuGreeting}>안녕하세요</Text><Text style={styles.menuUsername}>{username}</Text></View>
-            </View>
-            <View style={styles.menuDivider} />
-            <Pressable style={styles.menuItem} onPress={() => { setAccountMenuVisible(false); router.push('/my-page' as Href); }}>
-              <Ionicons name="person-circle-outline" size={23} color="#263D35" />
-              <Text style={styles.menuItemText}>마이페이지</Text>
-              <Ionicons name="chevron-forward" size={18} color="#8A9893" />
-            </Pressable>
+            {username ? (
+              <>
+                <View style={styles.menuHeader}>
+                  <View style={styles.menuAvatar}><Ionicons name="person" size={23} color="#FFFFFF" /></View>
+                  <View><Text style={styles.menuGreeting}>안녕하세요</Text><Text style={styles.menuUsername}>{username}</Text></View>
+                </View>
+                <View style={styles.menuDivider} />
+                <Pressable style={styles.menuItem} onPress={() => { setAccountMenuVisible(false); router.push('/my-page' as Href); }}>
+                  <Ionicons name="person-circle-outline" size={23} color="#263D35" />
+                  <Text style={styles.menuItemText}>마이페이지</Text>
+                  <Ionicons name="chevron-forward" size={18} color="#8A9893" />
+                </Pressable>
+              </>
+            ) : (
+              <>
+                <View style={styles.menuHeader}>
+                  <View style={styles.menuAvatar}><Ionicons name="person-outline" size={23} color="#FFFFFF" /></View>
+                  <View><Text style={styles.menuGreeting}>로그인하지 않고 이용 중</Text><Text style={styles.menuUsername}>게스트</Text></View>
+                </View>
+                <View style={styles.menuDivider} />
+                <Pressable style={styles.menuItem} onPress={() => { setAccountMenuVisible(false); router.push('/login' as Href); }}>
+                  <Ionicons name="log-in-outline" size={23} color="#167C5A" />
+                  <Text style={styles.menuItemText}>로그인</Text>
+                  <Ionicons name="chevron-forward" size={18} color="#8A9893" />
+                </Pressable>
+              </>
+            )}
             <Pressable style={styles.menuItem} onPress={() => { setAccountMenuVisible(false); router.push('/settings' as Href); }}>
               <Ionicons name="settings-outline" size={22} color="#263D35" />
               <Text style={styles.menuItemText}>설정</Text>
               <Ionicons name="chevron-forward" size={18} color="#8A9893" />
             </Pressable>
-            <Pressable style={styles.menuItem} onPress={logout}>
-              <Ionicons name="log-out-outline" size={22} color="#B42318" />
-              <Text style={[styles.menuItemText, styles.logoutText]}>로그아웃</Text>
-            </Pressable>
+            {username && (
+              <Pressable style={styles.menuItem} onPress={logout}>
+                <Ionicons name="log-out-outline" size={22} color="#B42318" />
+                <Text style={[styles.menuItemText, styles.logoutText]}>로그아웃</Text>
+              </Pressable>
+            )}
           </Pressable>
         </Pressable>
       </Modal>
@@ -473,19 +487,16 @@ const styles = StyleSheet.create({
   },
   searchInput: { flex: 1, color: '#14251F', fontSize: 15 },
   accountButton: {
-    maxWidth: 105,
+    width: 52,
     minHeight: 52,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 5,
-    paddingHorizontal: 12,
+    paddingHorizontal: 0,
     backgroundColor: '#155D45',
     borderRadius: 16,
     elevation: 5,
   },
-  accountButtonLoggedIn: { width: 52, paddingHorizontal: 0 },
-  accountText: { color: '#FFFFFF', fontWeight: '800', maxWidth: 65 },
   weatherAlerts: { marginHorizontal: 14, marginTop: 7, gap: 5 },
   weatherAlert: { flexDirection: 'row', alignItems: 'center', gap: 9, paddingHorizontal: 12, paddingVertical: 9, borderRadius: 13, borderWidth: 1, borderColor: '#F0D58C', backgroundColor: '#FFF8E1', elevation: 4 },
   weatherAlertDanger: { borderColor: '#FDA29B', backgroundColor: '#FFF1F0' },

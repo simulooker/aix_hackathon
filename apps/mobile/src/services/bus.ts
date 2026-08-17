@@ -37,13 +37,22 @@ export class BusApiKeyMissingError extends Error {
 function serviceKey(): string {
   const key = process.env.EXPO_PUBLIC_BUS_API_KEY?.trim();
   if (!key) throw new BusApiKeyMissingError();
+  // 공공데이터포털의 Encoding 키를 넣어도 URLSearchParams가 다시 인코딩해
+  // 인증이 실패하지 않도록 내부에서는 Decoding 형태로 통일한다.
+  if (/%[0-9a-fA-F]{2}/.test(key)) {
+    try {
+      return decodeURIComponent(key);
+    } catch {
+      return key;
+    }
+  }
   return key;
 }
 
 /** 자주 나오는 인증 오류에 해결 방법을 덧붙인다. */
 function authHint(reason: string): string {
   if (reason.includes('등록되지 않은') || reason.includes('NOT_REGISTERED')) {
-    return `${reason} — data.go.kr 에서 TAGO 버스정류소정보·버스위치정보 활용신청이 되어 있는지 확인해 주세요.`;
+    return `${reason} — data.go.kr에서 TAGO 정류소·노선·도착·위치정보 네 API가 모두 승인되었는지 확인해 주세요.`;
   }
   if (reason.includes('IP')) {
     return `${reason} — 마이페이지에서 등록 IP 설정을 확인해 주세요.`;
@@ -84,11 +93,26 @@ async function tagoFetch<T>(url: string, params: Record<string, string | number>
   });
 
   const response = await fetch(`${url}?${search}`);
+  const text = await response.text();
   if (!response.ok) {
+    const xmlReason = /<returnAuthMsg>(.*?)<\/returnAuthMsg>/.exec(text)?.[1]
+      ?? /<errMsg>(.*?)<\/errMsg>/.exec(text)?.[1];
+    let jsonReason: string | undefined;
+    try {
+      const errorPayload = JSON.parse(text) as TagoEnvelope<T>;
+      const header = errorPayload.OpenAPI_ServiceResponse?.cmmMsgHeader;
+      jsonReason = header?.returnAuthMsg ?? header?.errMsg;
+    } catch {
+      // HTML 또는 빈 오류 응답은 아래 상태 코드 안내를 사용한다.
+    }
+    const reason = xmlReason ?? jsonReason;
+    if (reason) throw new Error(`버스 API 오류: ${authHint(reason)}`);
+    if (response.status === 403) {
+      throw new Error('버스 API 인증이 거부되었습니다. EAS의 EXPO_PUBLIC_BUS_API_KEY가 일반 인증키(Decoding)인지, TAGO 정류소·노선·도착·위치정보 네 API가 모두 승인 상태인지 확인해 주세요.');
+    }
     throw new Error(`버스 정보를 불러오지 못했습니다. (${response.status})`);
   }
 
-  const text = await response.text();
   let payload: TagoEnvelope<T>;
   try {
     payload = JSON.parse(text) as TagoEnvelope<T>;

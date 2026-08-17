@@ -112,11 +112,20 @@ export function KakaoMap({
     .bus-tip{padding:5px 8px;font:12px sans-serif;white-space:nowrap}
     .disaster-pin{max-width:170px;padding:5px 9px;border:2px solid #fff;border-radius:13px;background:#b42318;color:#fff;
       box-shadow:0 2px 7px rgba(0,0,0,.32);font:800 11px/1.25 -apple-system,BlinkMacSystemFont,sans-serif;text-align:center}
+    #slope-legend{position:fixed;top:12px;left:12px;z-index:20;display:none;flex-direction:column;gap:4px;
+      padding:7px 9px;border-radius:10px;background:rgba(255,255,255,.93);box-shadow:0 2px 7px rgba(0,0,0,.18);
+      color:#40534c;font:700 10px/1.2 -apple-system,BlinkMacSystemFont,sans-serif}
+    .slope-item{display:flex;align-items:center;gap:5px}.slope-chip{width:18px;height:5px;border-radius:3px}
   </style>
 </head>
 <body>
   <div id="status">카카오 지도를 불러오는 중입니다.</div>
   <div id="map"></div>
+  <div id="slope-legend">
+    <div class="slope-item"><span class="slope-chip" style="background:#B7E4A8"></span>15° 이하</div>
+    <div class="slope-item"><span class="slope-chip" style="background:#63C174"></span>15° 초과~30°</div>
+    <div class="slope-item"><span class="slope-chip" style="background:#167C5A"></span>30° 초과</div>
+  </div>
   <script>
     const data = ${data};
     const status = document.getElementById('status');
@@ -249,6 +258,11 @@ export function KakaoMap({
         function currentLocationMarker(point) {
           if (!point) return;
           const position = new kakao.maps.LatLng(point.latitude, point.longitude);
+          const wrapper = document.createElement('div');
+          wrapper.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:2px;white-space:nowrap;';
+          const label = document.createElement('div');
+          label.textContent = '내 위치';
+          label.style.cssText = 'padding:2px 6px;border-radius:8px;background:rgba(255,255,255,.94);color:#C62828;font:800 10px sans-serif;box-shadow:0 1px 4px rgba(0,0,0,.2);';
           const content = document.createElement('button');
           content.type = 'button';
           content.title = '현재 위치';
@@ -257,7 +271,9 @@ export function KakaoMap({
           const centerDot = document.createElement('span');
           centerDot.style.cssText = 'display:block;width:9px;height:9px;border-radius:50%;background:#E53935;';
           content.appendChild(centerDot);
-          const overlay = new kakao.maps.CustomOverlay({ position, content, map, zIndex: 10, yAnchor: 0.5, xAnchor: 0.5 });
+          wrapper.appendChild(label);
+          wrapper.appendChild(content);
+          const overlay = new kakao.maps.CustomOverlay({ position, content: wrapper, map, zIndex: 10, yAnchor: 0.72, xAnchor: 0.5 });
           content.addEventListener('click', function () {
             const info = new kakao.maps.InfoWindow({ content: '<div style="padding:5px 8px;white-space:nowrap;font-size:12px">현재 위치</div>' });
             info.setPosition(position);
@@ -270,13 +286,12 @@ export function KakaoMap({
         marker(data.origin, '출발지');
         marker(data.destination, '목적지');
 
-        data.hazards.forEach(function (hazard) {
+        const hazardOverlays = data.hazards.map(function (hazard) {
           const severity = Number(hazard.severity || 0);
           const color = severity >= 0.7 ? '#d92d20' : severity >= 0.4 ? '#f79009' : '#fdb022';
-          new kakao.maps.Circle({
-            map,
+          return new kakao.maps.Circle({
             center: new kakao.maps.LatLng(hazard.latitude, hazard.longitude),
-            radius: 6,
+            radius: 7,
             strokeWeight: 2,
             strokeColor: color,
             strokeOpacity: 0.9,
@@ -285,6 +300,12 @@ export function KakaoMap({
             zIndex: 5
           });
         });
+        function updateHazardVisibility() {
+          const visible = map.getLevel() <= 5;
+          hazardOverlays.forEach(function (overlay) { overlay.setMap(visible ? map : null); });
+        }
+        updateHazardVisibility();
+        kakao.maps.event.addListener(map, 'zoom_changed', updateHazardVisibility);
 
         data.disasters.forEach(function (disaster) {
           const position = new kakao.maps.LatLng(disaster.latitude, disaster.longitude);
@@ -311,25 +332,63 @@ export function KakaoMap({
           });
         });
 
+        function horizontalDistance(left, right) {
+          const toRadians = function (value) { return value * Math.PI / 180; };
+          const latitudeDelta = toRadians(right.latitude - left.latitude);
+          const longitudeDelta = toRadians(right.longitude - left.longitude);
+          const value = Math.sin(latitudeDelta / 2) ** 2
+            + Math.cos(toRadians(left.latitude)) * Math.cos(toRadians(right.latitude))
+            * Math.sin(longitudeDelta / 2) ** 2;
+          return 6371000 * 2 * Math.atan2(Math.sqrt(value), Math.sqrt(1 - value));
+        }
+
+        function drawSlopeRoute(points, strokeStyle) {
+          if (!points || points.length < 2) return;
+          let block = [points[0]];
+          let blockDistance = 0;
+          function drawBlock(selected, distance) {
+            if (selected.length < 2) return;
+            const firstElevation = Number(selected[0].elevation);
+            const lastElevation = Number(selected[selected.length - 1].elevation);
+            const hasElevation = Number.isFinite(firstElevation) && Number.isFinite(lastElevation) && distance > 0;
+            const degree = hasElevation
+              ? Math.atan(Math.abs(lastElevation - firstElevation) / distance) * 180 / Math.PI
+              : 0;
+            const color = !hasElevation ? '#167C5A' : degree <= 15 ? '#B7E4A8' : degree <= 30 ? '#63C174' : '#167C5A';
+            const blockPath = selected.map(function (point) {
+              return new kakao.maps.LatLng(point.latitude, point.longitude);
+            });
+            new kakao.maps.Polyline({ map: map, path: blockPath, strokeWeight: 9, strokeColor: '#FFFFFF', strokeOpacity: 0.72, strokeStyle: strokeStyle });
+            new kakao.maps.Polyline({ map: map, path: blockPath, strokeWeight: 6, strokeColor: color, strokeOpacity: 0.96, strokeStyle: strokeStyle });
+          }
+          for (let index = 1; index < points.length; index += 1) {
+            const point = points[index];
+            blockDistance += horizontalDistance(points[index - 1], point);
+            block.push(point);
+            if (blockDistance >= 50 || index === points.length - 1) {
+              drawBlock(block, blockDistance);
+              block = [point];
+              blockDistance = 0;
+            }
+          }
+        }
+
         if (data.route.length > 1) {
+          document.getElementById('slope-legend').style.display = 'flex';
           const path = data.route.map(function (point) { return new kakao.maps.LatLng(point.latitude, point.longitude); });
           if (data.transitLegs && data.transitLegs.length) {
             data.transitLegs.forEach(function (leg) {
-              const legPath = (leg.geometry || []).map(function (point) {
-                return new kakao.maps.LatLng(point.latitude, point.longitude);
-              });
-              if (legPath.length < 2) return;
-              new kakao.maps.Polyline({
-                map: map,
-                path: legPath,
-                strokeWeight: leg.mode === 'bus' ? 7 : 5,
-                strokeColor: leg.mode === 'bus' ? '#1F6FEB' : '#167C5A',
-                strokeOpacity: 0.92,
-                strokeStyle: leg.mode === 'bus' ? 'solid' : 'shortdot'
-              });
+              const geometry = leg.geometry || [];
+              if (geometry.length < 2) return;
+              if (leg.mode === 'walk') {
+                drawSlopeRoute(geometry, 'shortdot');
+              } else {
+                const legPath = geometry.map(function (point) { return new kakao.maps.LatLng(point.latitude, point.longitude); });
+                new kakao.maps.Polyline({ map: map, path: legPath, strokeWeight: 7, strokeColor: '#1F6FEB', strokeOpacity: 0.92 });
+              }
             });
           } else {
-            new kakao.maps.Polyline({ map, path, strokeWeight: 6, strokeColor: '#167C5A', strokeOpacity: 0.9 });
+            drawSlopeRoute(data.route, 'solid');
           }
           const bounds = new kakao.maps.LatLngBounds();
           path.forEach(function (point) { bounds.extend(point); });
