@@ -14,6 +14,10 @@ tmp/
 app/
 
 # Local and generated files
+/.pytest_cache
+/.pytest_cache/**
+/services/api/.pytest_cache
+/services/api/.pytest_cache/**
 **/.pytest_cache/
 **/__pycache__/
 **/.expo/
