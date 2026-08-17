@@ -1,5 +1,7 @@
 import { env } from '@/src/constants/env';
 import type { AIAnalysisResponse, HazardReport, ReportResponse } from '@/src/types/hazard';
+import type { EnvironmentContext } from '@/src/types/environment';
+import type { DisasterZone } from '@/src/types/environment';
 import type { RoutePoint, RouteProfile, RouteResponse } from '@/src/types/route';
 
 const normalizedApiUrl = env.apiUrl.replace(/\/$/, '');
@@ -159,6 +161,35 @@ export async function requestRoute(params: { origin: RoutePoint; destination: Ro
       profile: params.profile,
     }),
   });
+  if (!response.ok) throw new Error(await errorMessage(response));
+  return response.json();
+}
+
+export async function getEnvironmentContext(params: {
+  latitude: number;
+  longitude: number;
+  profile: RouteProfile;
+  radiusM?: number;
+}): Promise<EnvironmentContext> {
+  const search = new URLSearchParams({
+    lat: String(params.latitude),
+    lon: String(params.longitude),
+    profile: params.profile,
+    radius_m: String(params.radiusM ?? 1500),
+  });
+  const response = await fetch(`${API_BASE_URL}/environment/context?${search}`);
+  if (!response.ok) throw new Error(await errorMessage(response));
+  return response.json();
+}
+
+export async function getRouteDisasters(origin: RoutePoint, destination: RoutePoint): Promise<DisasterZone[]> {
+  const search = new URLSearchParams({
+    origin_lat: String(origin.latitude),
+    origin_lon: String(origin.longitude),
+    destination_lat: String(destination.latitude),
+    destination_lon: String(destination.longitude),
+  });
+  const response = await fetch(`${API_BASE_URL}/environment/route-disasters?${search}`);
   if (!response.ok) throw new Error(await errorMessage(response));
   return response.json();
 }

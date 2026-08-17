@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     obstacle_model_path: str = "models/obstacle-detect-best.pt"
     ai_device: str = "cpu"
     ors_api_key: str | None = None
+    disaster_api_url: str | None = None
+    disaster_api_key: str | None = None
 
     smtp_host: str = "smtp.gmail.com"
     smtp_port: int = 587

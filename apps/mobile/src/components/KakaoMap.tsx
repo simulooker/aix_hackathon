@@ -3,8 +3,9 @@ import { StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import WebView, { WebViewMessageEvent } from 'react-native-webview';
 
 import type { BusStop, LiveBus } from '@/src/types/bus';
+import type { DisasterZone } from '@/src/types/environment';
 import type { HazardReport } from '@/src/types/hazard';
-import type { RoutePoint } from '@/src/types/route';
+import type { RoutePoint, TransitLeg } from '@/src/types/route';
 
 type KakaoMapProps = {
   center: RoutePoint;
@@ -12,7 +13,9 @@ type KakaoMapProps = {
   origin?: RoutePoint;
   destination?: RoutePoint;
   hazards?: HazardReport[];
+  disasters?: DisasterZone[];
   route?: RoutePoint[];
+  transitLegs?: TransitLeg[];
   busStops?: BusStop[];
   buses?: LiveBus[];
   onMapPress?: (point: RoutePoint) => void;
@@ -41,7 +44,9 @@ export function KakaoMap({
   origin,
   destination,
   hazards = [],
+  disasters = [],
   route = [],
+  transitLegs = [],
   busStops = [],
   buses = [],
   onMapPress,
@@ -87,7 +92,7 @@ export function KakaoMap({
   }, [currentLocation, recenterRequest]);
 
   const html = useMemo(() => {
-    const data = JSON.stringify({ center, currentLocation, origin, destination, hazards, route, searchRequest }).replace(/</g, '\\u003c');
+    const data = JSON.stringify({ center, currentLocation, origin, destination, hazards, disasters, route, transitLegs, searchRequest }).replace(/</g, '\\u003c');
     const safeKey = apiKey.replace(/[&<>"']/g, '');
 
     return `<!doctype html>
@@ -105,6 +110,8 @@ export function KakaoMap({
     .bus-pin .tail{position:absolute;left:50%;bottom:-5px;width:0;height:0;margin-left:-5px;
       border-left:5px solid transparent;border-right:5px solid transparent;border-top:6px solid #1f6feb}
     .bus-tip{padding:5px 8px;font:12px sans-serif;white-space:nowrap}
+    .disaster-pin{max-width:170px;padding:5px 9px;border:2px solid #fff;border-radius:13px;background:#b42318;color:#fff;
+      box-shadow:0 2px 7px rgba(0,0,0,.32);font:800 11px/1.25 -apple-system,BlinkMacSystemFont,sans-serif;text-align:center}
   </style>
 </head>
 <body>
@@ -239,7 +246,27 @@ export function KakaoMap({
           }
         }
 
-        marker(data.currentLocation, '현재 위치');
+        function currentLocationMarker(point) {
+          if (!point) return;
+          const position = new kakao.maps.LatLng(point.latitude, point.longitude);
+          const content = document.createElement('button');
+          content.type = 'button';
+          content.title = '현재 위치';
+          content.setAttribute('aria-label', '현재 위치');
+          content.style.cssText = 'width:24px;height:24px;padding:0;border:3px solid #E53935;border-radius:50%;background:#fff;box-shadow:0 2px 7px rgba(0,0,0,.28);display:flex;align-items:center;justify-content:center;box-sizing:border-box;';
+          const centerDot = document.createElement('span');
+          centerDot.style.cssText = 'display:block;width:9px;height:9px;border-radius:50%;background:#E53935;';
+          content.appendChild(centerDot);
+          const overlay = new kakao.maps.CustomOverlay({ position, content, map, zIndex: 10, yAnchor: 0.5, xAnchor: 0.5 });
+          content.addEventListener('click', function () {
+            const info = new kakao.maps.InfoWindow({ content: '<div style="padding:5px 8px;white-space:nowrap;font-size:12px">현재 위치</div>' });
+            info.setPosition(position);
+            info.open(map);
+          });
+          return overlay;
+        }
+
+        currentLocationMarker(data.currentLocation);
         marker(data.origin, '출발지');
         marker(data.destination, '목적지');
 
@@ -259,9 +286,51 @@ export function KakaoMap({
           });
         });
 
+        data.disasters.forEach(function (disaster) {
+          const position = new kakao.maps.LatLng(disaster.latitude, disaster.longitude);
+          const color = disaster.kind === 'landslide' ? '#7A271A' : '#B42318';
+          new kakao.maps.Circle({
+            map: map,
+            center: position,
+            radius: Number(disaster.radius_m || 80),
+            strokeWeight: 3,
+            strokeColor: color,
+            strokeOpacity: 0.95,
+            fillColor: color,
+            fillOpacity: 0.24,
+            zIndex: 7
+          });
+          const label = document.createElement('div');
+          label.className = 'disaster-pin';
+          label.textContent = disaster.kind === 'landslide'
+            ? '산사태 통제 · ' + disaster.title
+            : '침수·재난 통제 · ' + disaster.title;
+          new kakao.maps.CustomOverlay({
+            map: map, position: position, content: label,
+            xAnchor: 0.5, yAnchor: 1.35, zIndex: 9
+          });
+        });
+
         if (data.route.length > 1) {
           const path = data.route.map(function (point) { return new kakao.maps.LatLng(point.latitude, point.longitude); });
-          new kakao.maps.Polyline({ map, path, strokeWeight: 6, strokeColor: '#167C5A', strokeOpacity: 0.9 });
+          if (data.transitLegs && data.transitLegs.length) {
+            data.transitLegs.forEach(function (leg) {
+              const legPath = (leg.geometry || []).map(function (point) {
+                return new kakao.maps.LatLng(point.latitude, point.longitude);
+              });
+              if (legPath.length < 2) return;
+              new kakao.maps.Polyline({
+                map: map,
+                path: legPath,
+                strokeWeight: leg.mode === 'bus' ? 7 : 5,
+                strokeColor: leg.mode === 'bus' ? '#1F6FEB' : '#167C5A',
+                strokeOpacity: 0.92,
+                strokeStyle: leg.mode === 'bus' ? 'solid' : 'shortdot'
+              });
+            });
+          } else {
+            new kakao.maps.Polyline({ map, path, strokeWeight: 6, strokeColor: '#167C5A', strokeOpacity: 0.9 });
+          }
           const bounds = new kakao.maps.LatLngBounds();
           path.forEach(function (point) { bounds.extend(point); });
           map.setBounds(bounds, 40, 40, 40, 40);
@@ -359,7 +428,7 @@ export function KakaoMap({
   </script>
 </body>
 </html>`;
-  }, [apiKey, center, currentLocation, origin, destination, hazards, route, searchRequest]);
+  }, [apiKey, center, currentLocation, origin, destination, hazards, disasters, route, transitLegs, searchRequest]);
 
   const handleMessage = (event: WebViewMessageEvent) => {
     try {

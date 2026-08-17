@@ -11,6 +11,7 @@ from starlette.concurrency import run_in_threadpool
 from app.db.session import get_db
 from app.models.report import HazardReport
 from app.schemas.navigation import RouteRequest, RouteResponse
+from app.services.environment_service import fetch_disaster_zones, route_bbox
 from app.services.route_service import calculate_walking_route, distance_meters
 
 router = APIRouter(prefix="/routes", tags=["routes"])
@@ -63,6 +64,14 @@ async def create_route(payload: RouteRequest, db: DatabaseSession) -> RouteRespo
                 "Hazard lookup failed; calculating the real walking route without hazard weights"
             )
             hazards = []
+        disaster_zones = await fetch_disaster_zones(
+            *route_bbox(
+                payload.origin.latitude,
+                payload.origin.longitude,
+                payload.destination.latitude,
+                payload.destination.longitude,
+            )
+        )
         result = await run_in_threadpool(
             calculate_walking_route,
             payload.origin,
@@ -70,6 +79,7 @@ async def create_route(payload: RouteRequest, db: DatabaseSession) -> RouteRespo
             hazards,
             payload.profile,
             payload.prefer_safe_route,
+            disaster_zones,
         )
         return RouteResponse(
             route_id=str(uuid4()),
@@ -84,6 +94,12 @@ async def create_route(payload: RouteRequest, db: DatabaseSession) -> RouteRespo
             hazards_avoided=result.hazards_avoided,
             hazards_on_route=list(result.hazards_on_route),
             used_fallback_graph=result.used_fallback,
+            ascent_m=result.ascent_m,
+            descent_m=result.descent_m,
+            max_grade_percent=result.max_grade_percent,
+            slope_segments=list(result.slope_segments),
+            disaster_zones_avoided=result.disaster_zones_avoided,
+            disaster_zones=list(result.disaster_zones),
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -107,4 +123,10 @@ async def create_route(payload: RouteRequest, db: DatabaseSession) -> RouteRespo
             hazards_avoided=0,
             hazards_on_route=[],
             used_fallback_graph=True,
+            ascent_m=0,
+            descent_m=0,
+            max_grade_percent=0,
+            slope_segments=[],
+            disaster_zones_avoided=0,
+            disaster_zones=[],
         )

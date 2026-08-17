@@ -5,7 +5,7 @@
     "version": "1.1.0",
     "description": "AI 위험 분석과 이용자 맞춤형 안전 보행 경로를 제공하는 위드유 앱",
     "orientation": "portrait",
-    "icon": "./assets/images/ai-safe-route-logo-v4.png",
+    "icon": "./assets/images/ai-safe-route-logo-v5.png",
     "scheme": "aisafeway",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -14,30 +14,31 @@
       "supportsTablet": true,
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "현재 위치와 안전한 보행 경로를 안내하기 위해 위치를 사용합니다.",
-        "NSCameraUsageDescription": "보행 위험 요소를 촬영하여 신고하기 위해 카메라를 사용합니다.",
-        "NSPhotoLibraryUsageDescription": "위험 요소 신고 사진을 선택하기 위해 사진 보관함을 사용합니다."
+        "NSCameraUsageDescription": "보행 위험 요소를 촬영하여 신고하기 위해 카메라를 사용합니다."
       }
     },
     "android": {
       "package": "com.simulooker.aisaferoute",
       "adaptiveIcon": {
         "backgroundColor": "#DDF1E8",
-        "foregroundImage": "./assets/images/ai-safe-route-logo-v4.png"
+        "foregroundImage": "./assets/images/ai-safe-route-logo-v5.png"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "permissions": [
         "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_FINE_LOCATION",
-        "android.permission.ACCESS_MEDIA_LOCATION"
+        "android.permission.ACCESS_FINE_LOCATION"
       ],
       "blockedPermissions": [
-        "android.permission.RECORD_AUDIO"
+        "android.permission.RECORD_AUDIO",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_IMAGES"
       ]
     },
     "web": {
       "output": "static",
-      "favicon": "./assets/images/ai-safe-route-logo-v4.png"
+      "favicon": "./assets/images/ai-safe-route-logo-v5.png"
     },
     "plugins": [
       "expo-router",
@@ -50,20 +51,13 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "위험 요소 신고 사진을 선택하기 위해 사진 보관함을 사용합니다.",
           "cameraPermission": "보행 위험 요소를 촬영하여 신고하기 위해 카메라를 사용합니다."
-        }
-      ],
-      [
-        "expo-media-library",
-        {
-          "photosPermission": "사진에 저장된 촬영 위치를 위험 제보 위치로 사용하기 위해 사진 접근 권한이 필요합니다."
         }
       ],
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/ai-safe-route-logo-v4.png",
+          "image": "./assets/images/ai-safe-route-logo-v5.png",
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#DDF1E8",

@@ -22,11 +22,12 @@ import { PrimaryButton } from '@/src/components/PrimaryButton';
 import { DEFAULT_REGION } from '@/src/constants/map';
 import { useLiveBuses } from '@/src/features/bus/useLiveBuses';
 import { useCurrentLocation } from '@/src/features/location/useCurrentLocation';
-import { getNearbyHazards } from '@/src/services/api';
+import { getEnvironmentContext, getNearbyHazards } from '@/src/services/api';
 import { useAuthStore } from '@/src/stores/auth-store';
 import { usePreferencesStore } from '@/src/stores/preferences-store';
 import { useRouteStore } from '@/src/stores/route-store';
 import type { BusStop, LiveBus } from '@/src/types/bus';
+import type { EnvironmentContext } from '@/src/types/environment';
 import type { HazardReport } from '@/src/types/hazard';
 import type { RoutePoint } from '@/src/types/route';
 
@@ -47,12 +48,15 @@ export default function MapScreen() {
   const {
     route,
     fetchRoute,
+    fetchBusRoute,
     clearRoute,
     loading: routeLoading,
     error: routeError,
   } = useRouteStore();
 
   const [hazards, setHazards] = useState<HazardReport[]>([]);
+  const [environment, setEnvironment] = useState<EnvironmentContext>();
+  const [travelMode, setTravelMode] = useState<'walk' | 'bus'>('walk');
   const [origin, setOrigin] = useState<RoutePoint>();
   const [originName, setOriginName] = useState('현재 위치');
   const [destination, setDestination] = useState<RoutePoint>();
@@ -90,6 +94,15 @@ export default function MapScreen() {
     if (!coordinates) return;
     getNearbyHazards({ ...coordinates }).then(setHazards).catch(() => setHazards([]));
   }, [coordinates]);
+
+  useEffect(() => {
+    if (!coordinates) return;
+    getEnvironmentContext({
+      ...coordinates,
+      profile: routeProfile ?? 'general',
+      radiusM: 5000,
+    }).then(setEnvironment).catch(() => setEnvironment(undefined));
+  }, [coordinates, routeProfile]);
 
   useEffect(() => {
     if (!coordinates || destination || mapCenter) return;
@@ -165,7 +178,9 @@ export default function MapScreen() {
       ]);
       return;
     }
-    const result = await fetchRoute(routeOrigin, destination);
+    const result = travelMode === 'bus'
+      ? await fetchBusRoute(routeOrigin, destination)
+      : await fetchRoute(routeOrigin, destination);
     if (result?.geometry.length) {
       router.push(`/navigation/${result.route_id}` as Href);
     }
@@ -224,7 +239,9 @@ export default function MapScreen() {
         origin={origin}
         destination={destination}
         hazards={showHazards ? hazards : []}
+        disasters={environment?.disasters ?? []}
         route={route?.geometry}
+        transitLegs={route?.transit_legs}
         busStops={visibleBusStops}
         buses={visibleBuses}
         onMapPress={(point) => chooseDestination(point, '지도에서 선택한 위치')}
@@ -273,6 +290,26 @@ export default function MapScreen() {
             {!username && <Text style={styles.accountText}>로그인</Text>}
           </Pressable>
         </View>
+        {!!environment?.weather?.alerts.length && (
+          <View style={styles.weatherAlerts}>
+            {environment.weather.alerts.slice(0, 2).map((alert) => (
+              <View
+                key={`${alert.title}-${alert.message}`}
+                style={[styles.weatherAlert, alert.level === 'danger' && styles.weatherAlertDanger]}>
+                <Ionicons
+                  name={alert.title.includes('우천') ? 'rainy' : alert.title.includes('폭염') ? 'sunny' : 'warning'}
+                  size={18}
+                  color={alert.level === 'danger' ? '#B42318' : '#9A6700'}
+                />
+                <View style={styles.weatherAlertText}>
+                  <Text style={styles.weatherAlertTitle}>{alert.title}</Text>
+                  <Text style={styles.weatherAlertMessage} numberOfLines={2}>{alert.message}</Text>
+                </View>
+              </View>
+            ))}
+            <Text style={styles.weatherSource}>날씨: Open-Meteo</Text>
+          </View>
+        )}
         {searchError && <Text style={styles.searchError}>{searchError}</Text>}
         {searchResults.length > 0 && (
           <ScrollView
@@ -379,10 +416,26 @@ export default function MapScreen() {
           <Text style={styles.selectedPlaceText} numberOfLines={1}>출발 · {originName}</Text>
           <Text style={styles.selectedPlaceText} numberOfLines={1}>도착 · {destination ? destinationName || '지도에서 선택한 위치' : '선택하지 않음'}</Text>
         </View>
+        <View style={styles.travelModeRow}>
+          <Pressable
+            accessibilityRole="button"
+            style={[styles.travelModeButton, travelMode === 'walk' && styles.travelModeButtonActive]}
+            onPress={() => setTravelMode('walk')}>
+            <Ionicons name="walk" size={20} color={travelMode === 'walk' ? '#FFFFFF' : '#40534C'} />
+            <Text style={[styles.travelModeText, travelMode === 'walk' && styles.travelModeTextActive]}>걸어가기</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            style={[styles.travelModeButton, travelMode === 'bus' && styles.busModeButtonActive]}
+            onPress={() => setTravelMode('bus')}>
+            <Ionicons name="bus" size={20} color={travelMode === 'bus' ? '#FFFFFF' : '#40534C'} />
+            <Text style={[styles.travelModeText, travelMode === 'bus' && styles.travelModeTextActive]}>버스 이용</Text>
+          </Pressable>
+        </View>
         {error && <Text style={styles.error}>{error}</Text>}
         {routeError && <Text style={styles.error}>{routeError}</Text>}
         <PrimaryButton
-          label={destination ? '안전 경로 찾기' : '목적지를 먼저 입력해 주세요'}
+          label={destination ? (travelMode === 'bus' ? '버스 경로 찾기' : '안전 보행 경로 찾기') : '목적지를 먼저 입력해 주세요'}
           onPress={() => void findRoute()}
           disabled={!destination || !(origin ?? coordinates)}
           loading={routeLoading}
@@ -433,6 +486,13 @@ const styles = StyleSheet.create({
   },
   accountButtonLoggedIn: { width: 52, paddingHorizontal: 0 },
   accountText: { color: '#FFFFFF', fontWeight: '800', maxWidth: 65 },
+  weatherAlerts: { marginHorizontal: 14, marginTop: 7, gap: 5 },
+  weatherAlert: { flexDirection: 'row', alignItems: 'center', gap: 9, paddingHorizontal: 12, paddingVertical: 9, borderRadius: 13, borderWidth: 1, borderColor: '#F0D58C', backgroundColor: '#FFF8E1', elevation: 4 },
+  weatherAlertDanger: { borderColor: '#FDA29B', backgroundColor: '#FFF1F0' },
+  weatherAlertText: { flex: 1 },
+  weatherAlertTitle: { color: '#6B4F00', fontSize: 13, fontWeight: '900' },
+  weatherAlertMessage: { marginTop: 1, color: '#5E5541', fontSize: 11, lineHeight: 15 },
+  weatherSource: { alignSelf: 'flex-end', marginRight: 5, color: '#71817B', fontSize: 9 },
   menuBackdrop: { flex: 1, backgroundColor: 'rgba(12, 28, 22, 0.28)' },
   accountMenu: { position: 'absolute', right: 14, width: 232, padding: 10, borderRadius: 18, backgroundColor: '#FFFFFF', elevation: 12, shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 14 },
   menuHeader: { flexDirection: 'row', alignItems: 'center', gap: 11, padding: 9 },
@@ -534,6 +594,12 @@ const styles = StyleSheet.create({
   info: { color: '#52645E', fontSize: 12 },
   selectedPlaces: { gap: 4, padding: 10, borderRadius: 12, backgroundColor: '#F2F7F4' },
   selectedPlaceText: { color: '#40534C', fontSize: 12, fontWeight: '700' },
+  travelModeRow: { flexDirection: 'row', gap: 8 },
+  travelModeButton: { flex: 1, minHeight: 43, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderRadius: 12, borderWidth: 1, borderColor: '#CCDAD4', backgroundColor: '#F7FAF8' },
+  travelModeButtonActive: { borderColor: '#167C5A', backgroundColor: '#167C5A' },
+  busModeButtonActive: { borderColor: '#1F6FEB', backgroundColor: '#1F6FEB' },
+  travelModeText: { color: '#40534C', fontSize: 13, fontWeight: '800' },
+  travelModeTextActive: { color: '#FFFFFF' },
   error: { color: '#B42318', fontSize: 12 },
   reportButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingVertical: 5 },
   reportText: { color: '#167C5A', fontWeight: '800' },
