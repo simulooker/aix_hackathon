@@ -103,7 +103,8 @@ export function KakaoMap({
   <style>
     html,body,#map{width:100%;height:100%;margin:0;padding:0;overflow:hidden;background:#e7efeb}
     #status{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:24px;color:#52645e;font:14px sans-serif;text-align:center}
-    .bus-stop{width:11px;height:11px;border-radius:50%;background:#1f6feb;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.35);cursor:pointer}
+    .bus-stop{width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:9px;
+      background:#fff;border:2px solid #1f6feb;box-shadow:0 2px 5px rgba(0,0,0,.3);cursor:pointer;font-size:17px;line-height:1}
     .bus-pin{position:relative;cursor:pointer;font:700 12px/1 -apple-system,BlinkMacSystemFont,sans-serif;white-space:nowrap}
     .bus-pin .body{display:flex;align-items:center;gap:5px;padding:5px 10px;border-radius:14px;background:#1f6feb;color:#fff;box-shadow:0 2px 6px rgba(0,0,0,.32)}
     .bus-pin .glyph{width:9px;height:11px;border-radius:2px;background:#fff;box-shadow:inset 0 3px 0 #1f6feb,inset 0 5px 0 #fff}
@@ -122,9 +123,9 @@ export function KakaoMap({
   <div id="status">카카오 지도를 불러오는 중입니다.</div>
   <div id="map"></div>
   <div id="slope-legend">
-    <div class="slope-item"><span class="slope-chip" style="background:#B7E4A8"></span>15° 이하</div>
-    <div class="slope-item"><span class="slope-chip" style="background:#63C174"></span>15° 초과~30°</div>
-    <div class="slope-item"><span class="slope-chip" style="background:#167C5A"></span>30° 초과</div>
+    <div class="slope-item"><span class="slope-chip" style="background:#FACC15"></span>주의 · 경사 5~8%</div>
+    <div class="slope-item"><span class="slope-chip" style="background:#F79009"></span>힘듦 · 경사 8~12%</div>
+    <div class="slope-item"><span class="slope-chip" style="background:#D92D20"></span>매우 힘듦 · 경사 12% 이상</div>
   </div>
   <script>
     const data = ${data};
@@ -165,6 +166,7 @@ export function KakaoMap({
             const position = new kakao.maps.LatLng(stop.latitude, stop.longitude);
             const element = document.createElement('div');
             element.className = 'bus-stop';
+            element.textContent = '🚌';
             element.addEventListener('click', function () {
               openTip(position, escapeHtml(stop.name));
             });
@@ -351,10 +353,16 @@ export function KakaoMap({
             const firstElevation = Number(selected[0].elevation);
             const lastElevation = Number(selected[selected.length - 1].elevation);
             const hasElevation = Number.isFinite(firstElevation) && Number.isFinite(lastElevation) && distance > 0;
-            const degree = hasElevation
-              ? Math.atan(Math.abs(lastElevation - firstElevation) / distance) * 180 / Math.PI
+            const gradePercent = hasElevation
+              ? Math.abs(lastElevation - firstElevation) / distance * 100
               : 0;
-            const color = !hasElevation ? '#167C5A' : degree <= 15 ? '#B7E4A8' : degree <= 30 ? '#63C174' : '#167C5A';
+            const color = !hasElevation || gradePercent < 5
+              ? '#167C5A'
+              : gradePercent < 8
+              ? '#FACC15'
+              : gradePercent < 12
+              ? '#F79009'
+              : '#D92D20';
             const blockPath = selected.map(function (point) {
               return new kakao.maps.LatLng(point.latitude, point.longitude);
             });

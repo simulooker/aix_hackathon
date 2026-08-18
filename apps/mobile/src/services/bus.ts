@@ -22,7 +22,7 @@ const TAGO_BASE_URL = 'https://apis.data.go.kr/1613000';
 const STOP_SERVICE = `${TAGO_BASE_URL}/BusSttnInfoInqireService`;
 const LOCATION_SERVICE = `${TAGO_BASE_URL}/BusLcInfoInqireService`;
 const ROUTE_SERVICE = `${TAGO_BASE_URL}/BusRouteInfoInqireService`;
-const ARRIVAL_SERVICE = `${TAGO_BASE_URL}/BusArrivalInfoInqireService`;
+const ARRIVAL_SERVICE = `${TAGO_BASE_URL}/ArvlInfoInqireService`;
 
 /** getCtyCodeList 조회에 실패했을 때 사용하는 광주광역시 기본 도시코드 */
 const GWANGJU_FALLBACK_CITY_CODE = 24;
@@ -264,7 +264,7 @@ export async function getStopsOnRoute(params: {
   cityCode: number;
   routeId: string;
 }): Promise<BusRouteStop[]> {
-  const items = await tagoFetch<RouteStopItem>(`${ROUTE_SERVICE}/getRouteAcctoSttnList`, {
+  const items = await tagoFetch<RouteStopItem>(`${ROUTE_SERVICE}/getRouteAcctoThrghSttnList`, {
     cityCode: params.cityCode,
     routeId: params.routeId,
     numOfRows: 500,

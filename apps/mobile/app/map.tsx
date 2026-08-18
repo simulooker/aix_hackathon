@@ -407,7 +407,7 @@ export default function MapScreen() {
         <Pressable
           accessibilityRole="switch"
           accessibilityState={{ checked: showLiveBuses }}
-          accessibilityLabel={showLiveBuses ? '실시간 버스 위치 끄기' : '실시간 버스 위치 켜기'}
+          accessibilityLabel={showLiveBuses ? '버스정류장 표시 끄기' : '버스정류장 표시 켜기'}
           style={[styles.busToggle, showLiveBuses && styles.busToggleOn]}
           onPress={() => {
             if (!showLiveBuses) busErrorShown.current = false;
@@ -419,7 +419,7 @@ export default function MapScreen() {
             <Ionicons name="bus" size={22} color={showLiveBuses ? '#FFFFFF' : '#40534C'} />
           )}
           <Text style={[styles.busToggleText, showLiveBuses && styles.busToggleTextOn]}>
-            실시간 버스
+            버스정류장 표시
           </Text>
         </Pressable>
       </View>
