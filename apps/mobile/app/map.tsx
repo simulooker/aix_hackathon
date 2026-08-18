@@ -134,7 +134,7 @@ export default function MapScreen() {
     Alert.alert(
       '버스 정보를 불러올 수 없습니다',
       busError.includes('등록되지 않은')
-        ? '공공데이터포털에서 현재 서비스키의 TAGO 버스정류소정보 활용 승인을 확인해 주세요.'
+        ? '공공데이터 서버가 현재 앱의 키를 버스정류소정보용으로 인정하지 않았습니다. TAGO 버스정류소정보 승인 여부와 EAS에 등록한 키를 확인해 주세요.'
         : busError,
     );
   }, [busError, setShowLiveBuses, showLiveBuses]);
@@ -312,7 +312,6 @@ export default function MapScreen() {
                 <Text style={styles.weatherAlertTitle}>{alert.title}</Text>
                 {` · ${alert.message}`}
               </Text>
-              <Text style={styles.weatherSource}>Open-Meteo</Text>
             </View>
           );
         })()}
@@ -428,23 +427,26 @@ export default function MapScreen() {
       <View
         style={[styles.panel, { bottom: insets.bottom + 12 }]}
         onLayout={(event) => setPanelHeight(event.nativeEvent.layout.height)}>
-        <View style={styles.quickActions}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="현재 위치로 이동"
-            style={styles.quickActionButton}
-            onPress={() => void moveToCurrentLocation()}>
-            <Ionicons name="locate" size={19} color="#167C5A" />
-            <Text style={styles.quickActionText}>현위치</Text>
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="위험사진 제보"
-            style={styles.quickActionButton}
-            onPress={openReport}>
-            <Ionicons name="camera-outline" size={19} color="#167C5A" />
-            <Text style={styles.quickActionText}>제보</Text>
-          </Pressable>
+        <View style={styles.panelHeader}>
+          <Text style={styles.panelTitle}>안전 경로</Text>
+          <View style={styles.quickActions}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="현재 위치로 이동"
+              style={styles.quickActionButton}
+              onPress={() => void moveToCurrentLocation()}>
+              <Ionicons name="locate" size={19} color="#167C5A" />
+              <Text style={styles.quickActionText}>현위치</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="위험사진 제보"
+              style={styles.quickActionButton}
+              onPress={openReport}>
+              <Ionicons name="camera-outline" size={19} color="#167C5A" />
+              <Text style={styles.quickActionText}>제보</Text>
+            </Pressable>
+          </View>
         </View>
 
         {loading && <Text style={styles.info}>현재 위치를 확인하고 있습니다.</Text>}
@@ -519,7 +521,6 @@ const styles = StyleSheet.create({
   weatherAlertDanger: { borderColor: '#FDA29B', backgroundColor: '#FFF1F0' },
   weatherAlertLine: { flex: 1, color: '#5E5541', fontSize: 11, lineHeight: 15 },
   weatherAlertTitle: { color: '#6B4F00', fontSize: 11, fontWeight: '900' },
-  weatherSource: { color: '#8B9692', fontSize: 8 },
   menuBackdrop: { flex: 1, backgroundColor: 'rgba(12, 28, 22, 0.28)' },
   accountMenu: { position: 'absolute', right: 14, width: 232, padding: 10, borderRadius: 18, backgroundColor: '#FFFFFF', elevation: 12, shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 14 },
   menuHeader: { flexDirection: 'row', alignItems: 'center', gap: 11, padding: 9 },
@@ -603,7 +604,9 @@ const styles = StyleSheet.create({
     shadowRadius: 14,
     elevation: 8,
   },
-  quickActions: { flexDirection: 'row', alignSelf: 'flex-end', gap: 7 },
+  panelHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  panelTitle: { color: '#14251F', fontSize: 17, fontWeight: '900' },
+  quickActions: { flexDirection: 'row', gap: 7 },
   quickActionButton: { width: 52, height: 47, alignItems: 'center', justifyContent: 'center', gap: 1, borderRadius: 12, borderWidth: 1, borderColor: '#D6E5DF', backgroundColor: '#F2F8F5' },
   quickActionText: { color: '#167C5A', fontSize: 10, fontWeight: '800' },
   info: { color: '#52645E', fontSize: 12 },

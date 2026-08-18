@@ -78,6 +78,7 @@ export default function SettingsScreen() {
           <Ionicons name="shield-checkmark-outline" size={22} color="#167C5A" />
           <Text style={styles.infoText}>설정은 이 기기에 안전하게 저장되며 로그인하지 않아도 유지됩니다.</Text>
         </View>
+        <Text style={styles.attribution}>날씨 정보 제공: Open-Meteo</Text>
       </ScrollView>
     </SafeAreaView>
   );
@@ -107,4 +108,5 @@ const styles = StyleSheet.create({
   divider: { height: StyleSheet.hairlineWidth, marginLeft: 70, backgroundColor: '#DCE7E2' },
   infoCard: { flexDirection: 'row', gap: 10, marginTop: 18, padding: 15, borderRadius: 15, backgroundColor: '#E9F5F0' },
   infoText: { flex: 1, color: '#52645E', fontSize: 12, lineHeight: 18 },
+  attribution: { marginTop: 10, color: '#8A9893', fontSize: 10, textAlign: 'center' },
 });
