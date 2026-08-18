@@ -72,6 +72,10 @@ export function KakaoMap({
   // (HTML 을 새로 만들면 WebView 가 통째로 리로드되어 지도가 깜빡인다.)
   const busPayloadRef = useRef({ stops: busStops, buses });
   busPayloadRef.current = { stops: busStops, buses };
+  const hazardPayloadRef = useRef(hazards);
+  hazardPayloadRef.current = hazards;
+  const locationPayloadRef = useRef(currentLocation);
+  locationPayloadRef.current = currentLocation;
 
   const pushBusLayer = useCallback((payload: { stops: BusStop[]; buses: LiveBus[] }) => {
     const encoded = JSON.stringify(JSON.stringify(payload));
@@ -85,9 +89,37 @@ export function KakaoMap({
     `);
   }, []);
 
+  const pushHazardLayer = useCallback((payload: HazardReport[]) => {
+    const encoded = JSON.stringify(JSON.stringify(payload));
+    webViewRef.current?.injectJavaScript(`
+      if (window.__withyouHazards) {
+        window.__withyouHazards.setHazards(JSON.parse(${encoded}));
+      }
+      true;
+    `);
+  }, []);
+
+  const pushCurrentLocation = useCallback((point?: RoutePoint) => {
+    if (!point) return;
+    webViewRef.current?.injectJavaScript(`
+      if (window.__withyouLocation) {
+        window.__withyouLocation.setLocation(${point.latitude}, ${point.longitude});
+      }
+      true;
+    `);
+  }, []);
+
   useEffect(() => {
     pushBusLayer({ stops: busStops, buses });
   }, [busStops, buses, pushBusLayer]);
+
+  useEffect(() => {
+    pushHazardLayer(hazards);
+  }, [hazards, pushHazardLayer]);
+
+  useEffect(() => {
+    pushCurrentLocation(currentLocation);
+  }, [currentLocation, pushCurrentLocation]);
 
   useEffect(() => {
     if (!recenterRequest || !currentLocation) return;
@@ -101,7 +133,16 @@ export function KakaoMap({
   }, [currentLocation, recenterRequest]);
 
   const html = useMemo(() => {
-    const data = JSON.stringify({ center, currentLocation, origin, destination, hazards, disasters, route, transitLegs, searchRequest }).replace(/</g, '\\u003c');
+    const data = JSON.stringify({
+      center,
+      searchCenter: locationPayloadRef.current ?? center,
+      origin,
+      destination,
+      disasters,
+      route,
+      transitLegs,
+      searchRequest,
+    }).replace(/</g, '\\u003c');
     const safeKey = apiKey.replace(/[&<>"']/g, '');
 
     return `<!doctype html>
@@ -120,8 +161,8 @@ export function KakaoMap({
     .bus-pin .tail{position:absolute;left:50%;bottom:-5px;width:0;height:0;margin-left:-5px;
       border-left:5px solid transparent;border-right:5px solid transparent;border-top:6px solid #1f6feb}
     .bus-tip{padding:5px 8px;font:12px sans-serif;white-space:nowrap}
-    .hazard-marker{width:18px;height:18px;padding:0;border:2px solid #fff;border-radius:50%;
-      box-shadow:0 2px 6px rgba(0,0,0,.34);cursor:pointer}
+    .hazard-marker{width:12px;height:12px;padding:0;border:1.5px solid #fff;border-radius:50%;
+      box-shadow:0 1px 4px rgba(0,0,0,.3);cursor:pointer}
     .disaster-pin{max-width:170px;padding:5px 9px;border:2px solid #fff;border-radius:13px;background:#b42318;color:#fff;
       box-shadow:0 2px 7px rgba(0,0,0,.32);font:800 11px/1.25 -apple-system,BlinkMacSystemFont,sans-serif;text-align:center}
     #slope-legend{position:fixed;top:12px;left:12px;z-index:20;display:none;flex-direction:column;gap:4px;
@@ -134,9 +175,9 @@ export function KakaoMap({
   <div id="status">카카오 지도를 불러오는 중입니다.</div>
   <div id="map"></div>
   <div id="slope-legend">
-    <div class="slope-item"><span class="slope-chip" style="background:#FACC15"></span>주의 · 경사 5~8%</div>
-    <div class="slope-item"><span class="slope-chip" style="background:#F79009"></span>힘듦 · 경사 8~12%</div>
-    <div class="slope-item"><span class="slope-chip" style="background:#D92D20"></span>매우 힘듦 · 경사 12% 이상</div>
+    <div class="slope-item"><span class="slope-chip" style="background:#FACC15"></span>주의 · 약 2.9~4.6° (5~8%)</div>
+    <div class="slope-item"><span class="slope-chip" style="background:#F79009"></span>힘듦 · 약 4.6~6.8° (8~12%)</div>
+    <div class="slope-item"><span class="slope-chip" style="background:#D92D20"></span>매우 힘듦 · 약 6.8° 이상 (12%+)</div>
   </div>
   <script>
     const data = ${data};
@@ -251,6 +292,93 @@ export function KakaoMap({
       };
     }
 
+    function createHazardLayer(map) {
+      const overlays = {};
+      return {
+        setHazards: function (hazards) {
+          const seen = {};
+          (hazards || []).forEach(function (hazard) {
+            if (!hazard || !hazard.id) return;
+            seen[hazard.id] = true;
+            const severity = Number(hazard.severity || 0);
+            const color = severity >= 0.7 ? '#D92D20' : severity >= 0.4 ? '#F79009' : '#FFE58F';
+            const position = new kakao.maps.LatLng(hazard.latitude, hazard.longitude);
+            const existing = overlays[hazard.id];
+            if (existing) {
+              existing.overlay.setPosition(position);
+              existing.element.style.background = color;
+              return;
+            }
+            const element = document.createElement('button');
+            element.type = 'button';
+            element.className = 'hazard-marker';
+            element.title = '위험 제보 보기';
+            element.style.background = color;
+            element.addEventListener('click', function (event) {
+              event.stopPropagation();
+              send('hazardPress', { hazardId: hazard.id });
+            });
+            overlays[hazard.id] = {
+              element: element,
+              overlay: new kakao.maps.CustomOverlay({
+              map: map.getLevel() <= 5 ? map : null,
+              position: position,
+              content: element,
+              xAnchor: 0.5,
+              yAnchor: 0.5,
+              zIndex: 6,
+              clickable: true
+              })
+            };
+          });
+          Object.keys(overlays).forEach(function (hazardId) {
+            if (seen[hazardId]) return;
+            overlays[hazardId].overlay.setMap(null);
+            delete overlays[hazardId];
+          });
+        },
+        refreshVisibility: function () {
+          const visible = map.getLevel() <= 5;
+          Object.keys(overlays).forEach(function (hazardId) {
+            overlays[hazardId].overlay.setMap(visible ? map : null);
+          });
+        }
+      };
+    }
+
+    function createLocationLayer(map) {
+      let position;
+      const wrapper = document.createElement('div');
+      wrapper.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:2px;white-space:nowrap;';
+      const label = document.createElement('div');
+      label.textContent = '내 위치';
+      label.style.cssText = 'padding:2px 6px;border-radius:8px;background:rgba(255,255,255,.94);color:#C62828;font:800 10px sans-serif;box-shadow:0 1px 4px rgba(0,0,0,.2);';
+      const content = document.createElement('button');
+      content.type = 'button';
+      content.title = '현재 위치';
+      content.setAttribute('aria-label', '현재 위치');
+      content.style.cssText = 'width:24px;height:24px;padding:0;border:3px solid #E53935;border-radius:50%;background:#fff;box-shadow:0 2px 7px rgba(0,0,0,.28);display:flex;align-items:center;justify-content:center;box-sizing:border-box;';
+      const centerDot = document.createElement('span');
+      centerDot.style.cssText = 'display:block;width:9px;height:9px;border-radius:50%;background:#E53935;';
+      content.appendChild(centerDot);
+      wrapper.appendChild(label);
+      wrapper.appendChild(content);
+      const overlay = new kakao.maps.CustomOverlay({ content: wrapper, map: null, zIndex: 10, yAnchor: 0.72, xAnchor: 0.5 });
+      content.addEventListener('click', function () {
+        if (!position) return;
+        const info = new kakao.maps.InfoWindow({ content: '<div style="padding:5px 8px;white-space:nowrap;font-size:12px">현재 위치</div>' });
+        info.setPosition(position);
+        info.open(map);
+      });
+      return {
+        setLocation: function (latitude, longitude) {
+          position = new kakao.maps.LatLng(latitude, longitude);
+          overlay.setPosition(position);
+          overlay.setMap(map);
+        }
+      };
+    }
+
     function startMap() {
       if (!window.kakao || !window.kakao.maps) {
         fail('카카오 지도 SDK를 불러오지 못했습니다. 키와 허용 도메인을 확인해 주세요.');
@@ -273,61 +401,8 @@ export function KakaoMap({
           }
         }
 
-        function currentLocationMarker(point) {
-          if (!point) return;
-          const position = new kakao.maps.LatLng(point.latitude, point.longitude);
-          const wrapper = document.createElement('div');
-          wrapper.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:2px;white-space:nowrap;';
-          const label = document.createElement('div');
-          label.textContent = '내 위치';
-          label.style.cssText = 'padding:2px 6px;border-radius:8px;background:rgba(255,255,255,.94);color:#C62828;font:800 10px sans-serif;box-shadow:0 1px 4px rgba(0,0,0,.2);';
-          const content = document.createElement('button');
-          content.type = 'button';
-          content.title = '현재 위치';
-          content.setAttribute('aria-label', '현재 위치');
-          content.style.cssText = 'width:24px;height:24px;padding:0;border:3px solid #E53935;border-radius:50%;background:#fff;box-shadow:0 2px 7px rgba(0,0,0,.28);display:flex;align-items:center;justify-content:center;box-sizing:border-box;';
-          const centerDot = document.createElement('span');
-          centerDot.style.cssText = 'display:block;width:9px;height:9px;border-radius:50%;background:#E53935;';
-          content.appendChild(centerDot);
-          wrapper.appendChild(label);
-          wrapper.appendChild(content);
-          const overlay = new kakao.maps.CustomOverlay({ position, content: wrapper, map, zIndex: 10, yAnchor: 0.72, xAnchor: 0.5 });
-          content.addEventListener('click', function () {
-            const info = new kakao.maps.InfoWindow({ content: '<div style="padding:5px 8px;white-space:nowrap;font-size:12px">현재 위치</div>' });
-            info.setPosition(position);
-            info.open(map);
-          });
-          return overlay;
-        }
-
-        currentLocationMarker(data.currentLocation);
         marker(data.origin, '출발지');
         marker(data.destination, '목적지');
-
-        const hazardOverlays = data.hazards.map(function (hazard) {
-          const severity = Number(hazard.severity || 0);
-          const color = severity >= 0.7 ? '#d92d20' : severity >= 0.4 ? '#f79009' : '#fdb022';
-          const position = new kakao.maps.LatLng(hazard.latitude, hazard.longitude);
-          const element = document.createElement('button');
-          element.type = 'button';
-          element.className = 'hazard-marker';
-          element.title = '위험 제보 보기';
-          element.style.background = color;
-          element.addEventListener('click', function (event) {
-            event.stopPropagation();
-            send('hazardPress', { hazardId: hazard.id });
-          });
-          return new kakao.maps.CustomOverlay({
-            map: map, position: position, content: element,
-            xAnchor: 0.5, yAnchor: 0.5, zIndex: 6, clickable: true
-          });
-        });
-        function updateHazardVisibility() {
-          const visible = map.getLevel() <= 5;
-          hazardOverlays.forEach(function (overlay) { overlay.setMap(visible ? map : null); });
-        }
-        updateHazardVisibility();
-        kakao.maps.event.addListener(map, 'zoom_changed', updateHazardVisibility);
 
         data.disasters.forEach(function (disaster) {
           const position = new kakao.maps.LatLng(disaster.latitude, disaster.longitude);
@@ -428,7 +503,11 @@ export function KakaoMap({
         });
 
         window.__withyouBus = createBusLayer(map);
+        window.__withyouHazards = createHazardLayer(map);
+        window.__withyouLocation = createLocationLayer(map);
         send('busLayerReady', {});
+        send('hazardLayerReady', {});
+        send('locationLayerReady', {});
         function sendViewport() {
           const mapCenter = map.getCenter();
           send('viewport', {
@@ -441,11 +520,12 @@ export function KakaoMap({
         kakao.maps.event.addListener(map, 'idle', sendViewport);
         kakao.maps.event.addListener(map, 'zoom_changed', function () {
           window.__withyouBus.refreshStopVisibility();
+          window.__withyouHazards.refreshVisibility();
         });
 
         if (data.searchRequest && data.searchRequest.query && kakao.maps.services) {
           const places = new kakao.maps.services.Places();
-          const searchCenter = data.currentLocation || data.center;
+          const searchCenter = data.searchCenter || data.center;
           const query = data.searchRequest.query.trim().toLocaleLowerCase();
 
           function distanceMeters(latitude, longitude) {
@@ -527,7 +607,7 @@ export function KakaoMap({
   </script>
 </body>
 </html>`;
-  }, [apiKey, center, currentLocation, origin, destination, hazards, disasters, route, transitLegs, searchRequest]);
+  }, [apiKey, center, origin, destination, disasters, route, transitLegs, searchRequest]);
 
   const handleMessage = (event: WebViewMessageEvent) => {
     try {
@@ -544,6 +624,10 @@ export function KakaoMap({
       } else if (message.type === 'busLayerReady') {
         // 지도 HTML 이 다시 만들어지면 버스 오버레이가 사라지므로 현재 상태를 다시 밀어넣는다.
         pushBusLayer(busPayloadRef.current);
+      } else if (message.type === 'hazardLayerReady') {
+        pushHazardLayer(hazardPayloadRef.current);
+      } else if (message.type === 'locationLayerReady') {
+        pushCurrentLocation(locationPayloadRef.current);
       } else if (message.type === 'error') {
         setMapError((message as { message?: string }).message ?? '카카오 지도를 불러오지 못했습니다.');
       } else if (message.type === 'press' && message.latitude != null && message.longitude != null) {
@@ -554,7 +638,7 @@ export function KakaoMap({
           level: message.level,
         });
       } else if (message.type === 'hazardPress' && message.hazardId) {
-        const hazard = hazards.find((item) => item.id === message.hazardId);
+        const hazard = hazardPayloadRef.current.find((item) => item.id === message.hazardId);
         if (hazard) onHazardPress?.(hazard);
       } else if (message.type === 'searchResults') {
         onSearchResults?.(message.results ?? []);

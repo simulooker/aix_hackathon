@@ -535,7 +535,7 @@ export async function planBusJourney(
     .filter((plan) => isReasonablePlan(plan, directDistanceM));
   if (!allPlans.length) {
     throw new Error(disasters.length
-      ? '재난·통제 구간을 피하는 버스 경로를 찾지 못했습니다. 다른 목적지나 도보 경로를 확인해 주세요.'
+      ? '경로가 재난 통제구역을 포함합니다.'
       : '지나치게 우회하지 않는 버스 경로를 찾지 못했습니다. 도보 경로를 이용해 주세요.');
   }
   const selected = allPlans.sort(

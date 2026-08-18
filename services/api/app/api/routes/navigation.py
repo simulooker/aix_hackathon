@@ -1,5 +1,6 @@
 import logging
 from math import cos, radians
+from time import perf_counter
 from typing import Annotated
 from uuid import uuid4
 
@@ -45,6 +46,7 @@ async def create_road_route(payload: RoadRouteRequest) -> RoadRouteResponse:
 
 @router.post("", response_model=RouteResponse)
 async def create_route(payload: RouteRequest, db: DatabaseSession) -> RouteResponse:
+    request_started = perf_counter()
     try:
         center_latitude = (payload.origin.latitude + payload.destination.latitude) / 2
         center_longitude = (
@@ -88,6 +90,7 @@ async def create_route(payload: RouteRequest, db: DatabaseSession) -> RouteRespo
                 "Hazard lookup failed; calculating the real walking route without hazard weights"
             )
             hazards = []
+        hazard_lookup_finished = perf_counter()
         disaster_zones = await fetch_disaster_zones(
             *route_bbox(
                 payload.origin.latitude,
@@ -96,6 +99,7 @@ async def create_route(payload: RouteRequest, db: DatabaseSession) -> RouteRespo
                 payload.destination.longitude,
             )
         )
+        disaster_lookup_finished = perf_counter()
         result = await run_in_threadpool(
             calculate_walking_route,
             payload.origin,
@@ -104,6 +108,16 @@ async def create_route(payload: RouteRequest, db: DatabaseSession) -> RouteRespo
             payload.profile,
             payload.prefer_safe_route,
             disaster_zones,
+        )
+        route_finished = perf_counter()
+        logger.info(
+            "Walking route timings hazards=%.3fs disasters=%.3fs ors=%.3fs total=%.3fs hazard_count=%s profile=%s",
+            hazard_lookup_finished - request_started,
+            disaster_lookup_finished - hazard_lookup_finished,
+            route_finished - disaster_lookup_finished,
+            route_finished - request_started,
+            len(hazards),
+            payload.profile,
         )
         return RouteResponse(
             route_id=str(uuid4()),

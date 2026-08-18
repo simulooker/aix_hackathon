@@ -79,6 +79,10 @@ export default function MapScreen() {
   const [accountMenuVisible, setAccountMenuVisible] = useState(false);
   const [recenterRequest, setRecenterRequest] = useState(0);
   const [mapViewport, setMapViewport] = useState<MapViewport>();
+  const mapViewportRef = useRef<MapViewport | undefined>(undefined);
+  mapViewportRef.current = mapViewport;
+  const locationRef = useRef(coordinates);
+  locationRef.current = coordinates;
   const [selectedHazard, setSelectedHazard] = useState<HazardReport>();
   const [panelHeight, setPanelHeight] = useState(0);
   const profilePromptShown = useRef(false);
@@ -105,20 +109,45 @@ export default function MapScreen() {
     }, [clearRoute])
   );
 
-  useEffect(() => {
-    const lookupPoint = mapCenter ?? coordinates;
-    if (!lookupPoint) return;
-    getNearbyHazards({ ...lookupPoint }).then(setHazards).catch(() => setHazards([]));
-  }, [coordinates, mapCenter]);
+  const hazardViewportKey = mapViewport && mapViewport.level <= 5
+    ? `${mapViewport.center.latitude.toFixed(3)},${mapViewport.center.longitude.toFixed(3)},${mapViewport.level}`
+    : '';
+  const environmentLocationKey = coordinates
+    ? `${coordinates.latitude.toFixed(3)},${coordinates.longitude.toFixed(3)}`
+    : '';
 
   useEffect(() => {
-    if (!coordinates) return;
+    const viewport = mapViewportRef.current;
+    if (!showHazards || !hazardViewportKey || !viewport) {
+      setHazards([]);
+      return;
+    }
+    let cancelled = false;
+    const radiusM = viewport.level >= 5 ? 1600 : viewport.level === 4 ? 900 : 500;
+    const timer = setTimeout(() => {
+      getNearbyHazards({ ...viewport.center, radiusM })
+        .then((items) => {
+          if (!cancelled) setHazards(items);
+        })
+        .catch(() => {
+          // 일시적인 네트워크 오류 때 기존 마커를 지우지 않아 깜빡임을 방지한다.
+        });
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [hazardViewportKey, showHazards]);
+
+  useEffect(() => {
+    const currentCoordinates = locationRef.current;
+    if (!currentCoordinates) return;
     getEnvironmentContext({
-      ...coordinates,
+      ...currentCoordinates,
       profile: routeProfile ?? 'general',
       radiusM: 5000,
     }).then(setEnvironment).catch(() => setEnvironment(undefined));
-  }, [coordinates, routeProfile]);
+  }, [environmentLocationKey, routeProfile]);
 
   useEffect(() => {
     if (!coordinates || destination || mapCenter) return;
@@ -209,6 +238,11 @@ export default function MapScreen() {
       : await fetchRoute(routeOrigin, destination);
     if (result?.geometry.length) {
       router.push(`/navigation/${result.route_id}` as Href);
+    } else {
+      const latestError = useRouteStore.getState().error;
+      if (latestError === '경로가 재난 통제구역을 포함합니다.') {
+        Alert.alert('경로 안내 불가', latestError);
+      }
     }
   };
 

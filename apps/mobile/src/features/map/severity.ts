@@ -5,5 +5,5 @@ export function severityColor(hazard: HazardReport): string {
   const severity = hazard.severity ?? 0;
   if (severity >= 0.7) return '#D92D20';
   if (severity >= 0.4) return '#F79009';
-  return '#EAAA08';
+  return '#FFE58F';
 }

@@ -1,5 +1,6 @@
 import logging
 from math import cos, radians
+from time import monotonic
 from typing import Any
 
 import httpx
@@ -9,6 +10,8 @@ from app.schemas.environment import DisasterZone, WeatherAlert, WeatherContext
 
 logger = logging.getLogger(__name__)
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
+DISASTER_CACHE_TTL_SECONDS = 300
+_disaster_cache: dict[tuple[float, float, float, float], tuple[float, list[DisasterZone]]] = {}
 
 
 async def fetch_weather(
@@ -111,6 +114,15 @@ async def fetch_disaster_zones(
     if not settings.disaster_api_url or not settings.disaster_api_key:
         return []
 
+    cache_key = tuple(
+        round(value, 3)
+        for value in (min_latitude, min_longitude, max_latitude, max_longitude)
+    )
+    cached = _disaster_cache.get(cache_key)
+    now = monotonic()
+    if cached and now - cached[0] < DISASTER_CACHE_TTL_SECONDS:
+        return cached[1]
+
     url = settings.disaster_api_url.format(
         min_lat=min_latitude,
         min_lon=min_longitude,
@@ -129,7 +141,7 @@ async def fetch_disaster_zones(
         "pageNo": 1,
     }
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=5.0) as client:
             response = await client.get(url, params=params)
             response.raise_for_status()
         records = _records(response.json())
@@ -143,9 +155,14 @@ async def fetch_disaster_zones(
             if not (min_longitude <= zone.longitude <= max_longitude):
                 continue
             zones.append(zone)
+        if len(_disaster_cache) >= 64:
+            oldest_key = min(_disaster_cache, key=lambda key: _disaster_cache[key][0])
+            _disaster_cache.pop(oldest_key, None)
+        _disaster_cache[cache_key] = (now, zones)
         return zones
     except Exception:  # noqa: BLE001
         logger.exception("Disaster feed lookup failed")
+        _disaster_cache[cache_key] = (now, [])
         return []
 
 
@@ -252,4 +269,3 @@ def _int_or_none(value: Any) -> int | None:
 
 def _string_or_none(value: Any) -> str | None:
     return str(value) if value not in (None, "") else None
-

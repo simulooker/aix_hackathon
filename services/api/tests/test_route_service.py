@@ -3,6 +3,8 @@ from types import SimpleNamespace
 from app.services.route_service import (
     _RouteCandidate,
     _avoid_polygons,
+    _nearby_hazards,
+    _route_intersects_disaster_zone,
     _select_candidate,
     _slope_metrics,
 )
@@ -34,14 +36,14 @@ def test_general_profile_accepts_only_a_small_safer_detour() -> None:
     assert avoided == 1
 
 
-def test_elderly_profile_rejects_twenty_percent_detour() -> None:
+def test_elderly_profile_accepts_twenty_percent_detour_for_high_risk() -> None:
     shortest = candidate(100, [1.0])
     safer = candidate(120, [])
 
     selected, avoided = _select_candidate([shortest, safer], "elderly", True)
 
-    assert selected is shortest
-    assert avoided == 0
+    assert selected is safer
+    assert avoided == 1
 
 
 def test_safety_disabled_always_uses_shortest_candidate() -> None:
@@ -52,6 +54,16 @@ def test_safety_disabled_always_uses_shortest_candidate() -> None:
 
     assert selected is shortest
     assert avoided == 0
+
+
+def test_hazard_is_detected_between_sparse_route_points() -> None:
+    geometry = [
+        {"latitude": 35.0, "longitude": 126.0},
+        {"latitude": 35.001, "longitude": 126.0},
+    ]
+    hazard = SimpleNamespace(latitude=35.0005, longitude=126.00005)
+
+    assert _nearby_hazards(geometry, [hazard]) == (hazard,)
 
 
 def test_slope_metrics_detects_a_steep_section() -> None:
@@ -85,6 +97,25 @@ def test_disaster_zone_becomes_an_ors_avoid_polygon() -> None:
     assert polygon is not None
     assert polygon["type"] == "MultiPolygon"
     assert len(polygon["coordinates"][0][0]) == 13
+
+
+def test_route_crossing_disaster_zone_is_blocked() -> None:
+    zone = DisasterZone(
+        id="flood-1",
+        kind="flood",
+        title="침수 통제",
+        description="",
+        latitude=35.0005,
+        longitude=126.0,
+        radius_m=30,
+        severity=1,
+    )
+    geometry = [
+        {"latitude": 35.0, "longitude": 126.0},
+        {"latitude": 35.001, "longitude": 126.0},
+    ]
+
+    assert _route_intersects_disaster_zone(geometry, [zone]) is True
 
 
 def test_wheelchair_profile_can_choose_a_flatter_small_detour() -> None:

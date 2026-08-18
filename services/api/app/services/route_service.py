@@ -16,6 +16,11 @@ ORS_API_KEY = settings.ors_api_key or ""
 ORS_BASE_URL = "https://api.openrouteservice.org"
 MAX_WALKING_DISTANCE_M = 10_000
 MAX_ROAD_WAYPOINTS = 25
+DISASTER_ROUTE_MESSAGE = "경로가 재난 통제구역을 포함합니다."
+
+
+class DisasterRouteBlocked(ValueError):
+    """안전하게 우회할 수 없는 재난 통제구역이 경로에 포함된 경우입니다."""
 
 
 @dataclass(frozen=True)
@@ -56,30 +61,61 @@ def distance_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> float
 
 
 def _nearby_hazards(
-    geometry: list[dict[str, float]], hazards: list[Any], radius_m: float = 25
+    geometry: list[dict[str, float]], hazards: list[Any], radius_m: float = 18
 ) -> tuple[Any, ...]:
-    """경로 선 주변 반경 내에 존재하는 위험 요소들을 추출합니다."""
+    """경로 좌표 사이의 선분까지 계산해 실제 경로 주변 위험 요소를 추출합니다."""
     nearby: list[Any] = []
     for hazard in hazards:
         h_lat = getattr(hazard, "latitude", None)
         h_lon = getattr(hazard, "longitude", None)
         if h_lat is None or h_lon is None:
             continue
-        if any(
-            distance_meters(h_lat, h_lon, pt["latitude"], pt["longitude"]) <= radius_m
-            for pt in geometry
-        ):
+        if len(geometry) == 1:
+            is_nearby = distance_meters(
+                h_lat, h_lon, geometry[0]["latitude"], geometry[0]["longitude"]
+            ) <= radius_m
+        else:
+            is_nearby = any(
+                _distance_to_segment_m(h_lat, h_lon, geometry[index - 1], point)
+                <= radius_m
+                for index, point in enumerate(geometry[1:], start=1)
+            )
+        if is_nearby:
             nearby.append(hazard)
     return tuple(nearby)
+
+
+def _distance_to_segment_m(
+    latitude: float,
+    longitude: float,
+    start: dict[str, float],
+    end: dict[str, float],
+) -> float:
+    """짧은 지도 구간을 평면에 투영해 점과 선분 사이 거리를 계산합니다."""
+    reference_latitude = radians(latitude)
+    meters_per_lon = max(1.0, 111_320 * cos(reference_latitude))
+    sx = (start["longitude"] - longitude) * meters_per_lon
+    sy = (start["latitude"] - latitude) * 111_320
+    ex = (end["longitude"] - longitude) * meters_per_lon
+    ey = (end["latitude"] - latitude) * 111_320
+    dx = ex - sx
+    dy = ey - sy
+    length_squared = dx * dx + dy * dy
+    if length_squared <= 0:
+        return sqrt(sx * sx + sy * sy)
+    ratio = max(0.0, min(1.0, -(sx * dx + sy * dy) / length_squared))
+    closest_x = sx + ratio * dx
+    closest_y = sy + ratio * dy
+    return sqrt(closest_x * closest_x + closest_y * closest_y)
 
 
 def _candidate_score(candidate: _RouteCandidate, profile: str) -> float:
     """테스트 코드 및 위험도 평가를 위한 스코어 함수"""
     penalty_per_full_risk = {
-        "general": 35,
-        "elderly": 80,
-        "wheelchair": 130,
-    }.get(profile, 35)
+        "general": 140,
+        "elderly": 300,
+        "wheelchair": 600,
+    }.get(profile, 140)
     risk = sum(
         max(0.0, min(1.0, float(getattr(item, "severity", 0) or 0)))
         for item in candidate.hazards
@@ -106,8 +142,8 @@ def _select_candidate(
     )
     if not prefer_safe_route or not has_safety_signal:
         return shortest, 0
-    max_detour_ratio = {"general": 1.05, "elderly": 1.10, "wheelchair": 1.15}.get(
-        profile, 1.05
+    max_detour_ratio = {"general": 1.12, "elderly": 1.22, "wheelchair": 1.35}.get(
+        profile, 1.12
     )
     reasonable = [
         item
@@ -115,6 +151,15 @@ def _select_candidate(
         if item.distance_m <= shortest.distance_m * max_detour_ratio
     ]
     selected = min(reasonable, key=lambda item: _candidate_score(item, profile))
+    logger.info(
+        "Route candidates profile=%s shortest=%sm selected=%sm hazards(shortest=%s selected=%s) scores=%s",
+        profile,
+        shortest.distance_m,
+        selected.distance_m,
+        len(shortest.hazards),
+        len(selected.hazards),
+        [round(_candidate_score(item, profile), 1) for item in reasonable],
+    )
     return selected, max(0, len(shortest.hazards) - len(selected.hazards))
 
 
@@ -261,6 +306,32 @@ def _avoid_polygons(zones: list[DisasterZone]) -> dict[str, Any] | None:
     return {"type": "MultiPolygon", "coordinates": polygons} if polygons else None
 
 
+def _route_intersects_disaster_zone(
+    geometry: list[dict[str, float]], zones: list[DisasterZone]
+) -> bool:
+    if not geometry or not zones:
+        return False
+    for zone in zones:
+        if len(geometry) == 1:
+            if distance_meters(
+                zone.latitude,
+                zone.longitude,
+                geometry[0]["latitude"],
+                geometry[0]["longitude"],
+            ) <= zone.radius_m:
+                return True
+            continue
+        if any(
+            _distance_to_segment_m(
+                zone.latitude, zone.longitude, geometry[index - 1], point
+            )
+            <= zone.radius_m
+            for index, point in enumerate(geometry[1:], start=1)
+        ):
+            return True
+    return False
+
+
 def calculate_road_route(points: list[Any]) -> RouteResult:
     """버스 정류장 좌표들을 실제 자동차 도로망에 맞춰 연결합니다."""
     coordinates: list[list[float]] = []
@@ -327,14 +398,14 @@ def calculate_walking_route(
         if distance_meters(
             origin.latitude, origin.longitude, zone.latitude, zone.longitude
         ) <= zone.radius_m:
-            raise ValueError("출발지가 재난 통제 구간 안에 있어 경로를 계산할 수 없습니다.")
+            raise DisasterRouteBlocked(DISASTER_ROUTE_MESSAGE)
         if distance_meters(
             destination.latitude,
             destination.longitude,
             zone.latitude,
             zone.longitude,
         ) <= zone.radius_m:
-            raise ValueError("목적지가 재난 통제 구간 안에 있어 경로를 계산할 수 없습니다.")
+            raise DisasterRouteBlocked(DISASTER_ROUTE_MESSAGE)
     ors_profile = "wheelchair" if profile == "wheelchair" else "foot-walking"
     url = f"{ORS_BASE_URL}/v2/directions/{ors_profile}/geojson"
 
@@ -390,6 +461,8 @@ def calculate_walking_route(
         selected, avoided_count = _select_candidate(
             candidates, profile, prefer_safe_route
         )
+        if _route_intersects_disaster_zone(selected.geometry, disaster_zones):
+            raise DisasterRouteBlocked(DISASTER_ROUTE_MESSAGE)
 
         return RouteResult(
             geometry=selected.geometry,
@@ -405,8 +478,12 @@ def calculate_walking_route(
             disaster_zones=tuple(disaster_zones),
         )
 
+    except DisasterRouteBlocked:
+        raise
     except Exception as exc:  # noqa: BLE001
         logger.error("❌ OpenRouteService 처리 중 에러 발생: %s", exc)
+        if disaster_zones:
+            raise DisasterRouteBlocked(DISASTER_ROUTE_MESSAGE) from exc
         return RouteResult(
             geometry=[
                 {"latitude": origin.latitude, "longitude": origin.longitude},

@@ -6,6 +6,7 @@ import { KakaoMap } from '@/src/components/KakaoMap';
 import { PrimaryButton } from '@/src/components/PrimaryButton';
 import type { Maneuver, NavigationStep } from '@/src/features/navigation/routeSteps';
 import { useVoiceGuidance } from '@/src/features/navigation/useVoiceGuidance';
+import { useCurrentLocation } from '@/src/features/location/useCurrentLocation';
 import { useRouteStore } from '@/src/stores/route-store';
 
 const maneuverIcon: Record<Maneuver, keyof typeof MaterialCommunityIcons.glyphMap> = {
@@ -41,6 +42,7 @@ export default function NavigationScreen() {
   const { routeId } = useLocalSearchParams<{ routeId: string }>();
   const route = useRouteStore((state) => state.route);
   const guidance = useVoiceGuidance(route);
+  const { coordinates } = useCurrentLocation();
 
   if (!route || route.route_id !== routeId || !route.geometry.length) {
     return <SafeAreaView style={styles.emptyContainer}><Text style={styles.title}>경로 정보를 찾을 수 없습니다.</Text><Text style={styles.body}>지도에서 목적지를 다시 검색해 주세요.</Text><PrimaryButton label="지도로 돌아가기" onPress={() => router.replace('/map')} style={styles.backButton} /></SafeAreaView>;
@@ -52,13 +54,16 @@ export default function NavigationScreen() {
   const isBusRoute = route.travel_mode === 'bus' && !!route.transit_legs?.length;
   const maxGrade = route.max_grade_percent ?? 0;
   const maxGradeDegrees = Math.atan(maxGrade / 100) * 180 / Math.PI;
+  const slopeLevel = maxGrade >= 12 ? 'verySteep' : maxGrade >= 8 ? 'steep' : 'moderate';
+  const slopeLabel = slopeLevel === 'verySteep' ? '매우 힘듦' : slopeLevel === 'steep' ? '힘듦' : '주의';
+  const slopeIconColor = slopeLevel === 'verySteep' ? '#B42318' : slopeLevel === 'steep' ? '#B54708' : '#9A6700';
 
   return (
     <SafeAreaView style={styles.container}>
       <KakaoMap
         style={styles.map}
-        center={guidance.currentLocation ?? origin}
-        currentLocation={guidance.currentLocation ?? origin}
+        center={origin}
+        currentLocation={guidance.currentLocation ?? coordinates ?? origin}
         destination={destination}
         route={route.geometry}
         transitLegs={route.transit_legs}
@@ -72,10 +77,16 @@ export default function NavigationScreen() {
         </View>
 
         {maxGrade >= 5 && (
-          <View style={[styles.slopeNotice, maxGrade >= 8 && styles.slopeNoticeDanger]}>
-            <MaterialCommunityIcons name="slope-uphill" size={23} color={maxGrade >= 8 ? '#B42318' : '#9A6700'} />
+          <View style={[
+            styles.slopeNotice,
+            slopeLevel === 'steep' && styles.slopeNoticeSteep,
+            slopeLevel === 'verySteep' && styles.slopeNoticeDanger,
+          ]}>
+            <MaterialCommunityIcons name="slope-uphill" size={23} color={slopeIconColor} />
             <View style={styles.slopeTextWrap}>
-              <Text style={styles.slopeTitle}>경사 구간 주의 · 최대 약 {maxGradeDegrees.toFixed(1)}°</Text>
+              <Text style={[styles.slopeTitle, slopeLevel === 'steep' && styles.slopeTitleSteep, slopeLevel === 'verySteep' && styles.slopeTitleDanger]}>
+                경사 구간 {slopeLabel} · 최대 약 {maxGradeDegrees.toFixed(1)}° ({maxGrade.toFixed(1)}%)
+              </Text>
               <Text style={styles.slopeBody}>지도 선은 약 50m씩 나눈 고도 기반 추정값입니다. 짧은 턱이나 급경사는 현장에서 다시 확인해 주세요.</Text>
             </View>
           </View>
@@ -137,8 +148,9 @@ const styles = StyleSheet.create({
   stepText: { flex: 1, marginLeft: 11 }, stepCaption: { color: '#71817B', fontSize: 11, fontWeight: '700' }, stepInstruction: { color: '#596A64', fontSize: 14, fontWeight: '700', marginTop: 2 }, currentInstruction: { color: '#14251F', fontSize: 18, fontWeight: '900' },
   arrived: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, padding: 16, backgroundColor: '#E2F3EC', borderRadius: 14 }, arrivedText: { color: '#167C5A', fontSize: 18, fontWeight: '900' },
   slopeNotice: { flexDirection: 'row', alignItems: 'center', gap: 9, padding: 10, borderRadius: 12, backgroundColor: '#FFF8E1', borderWidth: 1, borderColor: '#F0D58C' },
+  slopeNoticeSteep: { backgroundColor: '#FFF4E5', borderColor: '#FDBA74' },
   slopeNoticeDanger: { backgroundColor: '#FFF1F0', borderColor: '#FDA29B' },
-  slopeTextWrap: { flex: 1 }, slopeTitle: { color: '#6B4F00', fontSize: 13, fontWeight: '900' }, slopeBody: { marginTop: 2, color: '#6F6651', fontSize: 10, lineHeight: 14 },
+  slopeTextWrap: { flex: 1 }, slopeTitle: { color: '#6B4F00', fontSize: 13, fontWeight: '900' }, slopeTitleSteep: { color: '#9A4600' }, slopeTitleDanger: { color: '#B42318' }, slopeBody: { marginTop: 2, color: '#6F6651', fontSize: 10, lineHeight: 14 },
   disasterNotice: { padding: 9, borderRadius: 10, color: '#B42318', backgroundColor: '#FFF1F0', fontSize: 12, fontWeight: '800' },
   itinerary: { maxHeight: 300 }, itineraryContent: { gap: 8, paddingBottom: 5 },
   legCard: { flexDirection: 'row', alignItems: 'center', gap: 11, padding: 11, borderRadius: 14, backgroundColor: '#F0F7F4', borderWidth: 1, borderColor: '#D6E7E0' },

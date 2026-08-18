@@ -86,10 +86,11 @@ export function useLiveBuses(coordinates: RoutePoint | undefined, enabled: boole
     };
 
     setLoading(true);
-    void loadStops();
+    const timer = setTimeout(() => void loadStops(), 300);
 
     return () => {
       cancelled = true;
+      clearTimeout(timer);
     };
   }, [coordinateKey, enabled, reset]);
 
