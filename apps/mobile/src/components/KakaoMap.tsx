@@ -358,7 +358,6 @@ export function KakaoMap({
             const blockPath = selected.map(function (point) {
               return new kakao.maps.LatLng(point.latitude, point.longitude);
             });
-            new kakao.maps.Polyline({ map: map, path: blockPath, strokeWeight: 9, strokeColor: '#FFFFFF', strokeOpacity: 0.72, strokeStyle: strokeStyle });
             new kakao.maps.Polyline({ map: map, path: blockPath, strokeWeight: 6, strokeColor: color, strokeOpacity: 0.96, strokeStyle: strokeStyle });
           }
           for (let index = 1; index < points.length; index += 1) {

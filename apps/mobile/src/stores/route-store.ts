@@ -55,7 +55,7 @@ export const useRouteStore = create<RouteState>((set) => ({
     try {
       const profile = usePreferencesStore.getState().routeProfile;
       if (!profile) {
-        set({ route: undefined, loading: false, error: '마이페이지에서 이용자 유형을 먼저 설정해 주세요.' });
+        set({ route: undefined, loading: false, error: '설정 → 이용자 유형에서 이용자 유형을 먼저 설정해 주세요.' });
         return undefined;
       }
       const route = await requestRoute({ origin, destination, profile });
@@ -76,7 +76,7 @@ export const useRouteStore = create<RouteState>((set) => ({
     try {
       const profile = usePreferencesStore.getState().routeProfile;
       if (!profile) {
-        set({ route: undefined, loading: false, error: '마이페이지에서 이용자 유형을 먼저 설정해 주세요.' });
+        set({ route: undefined, loading: false, error: '설정 → 이용자 유형에서 이용자 유형을 먼저 설정해 주세요.' });
         return undefined;
       }
       const disasters = await getRouteDisasters(origin, destination).catch(() => []);

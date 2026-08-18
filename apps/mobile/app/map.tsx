@@ -91,9 +91,10 @@ export default function MapScreen() {
   );
 
   useEffect(() => {
-    if (!coordinates) return;
-    getNearbyHazards({ ...coordinates }).then(setHazards).catch(() => setHazards([]));
-  }, [coordinates]);
+    const lookupPoint = mapCenter ?? coordinates;
+    if (!lookupPoint) return;
+    getNearbyHazards({ ...lookupPoint }).then(setHazards).catch(() => setHazards([]));
+  }, [coordinates, mapCenter]);
 
   useEffect(() => {
     if (!coordinates) return;
@@ -111,21 +112,17 @@ export default function MapScreen() {
   }, [coordinates, destination, mapCenter]);
 
   useEffect(() => {
-    if (!username) {
-      profilePromptShown.current = false;
-      return;
-    }
     if (!preferencesInitialized || routeProfile || profilePromptShown.current) return;
     profilePromptShown.current = true;
     Alert.alert(
       '사용자 유형을 정해 주세요',
-      '프로필 → 마이페이지 → 사용자 유형 설정에서 이용자 유형을 선택해 주세요.',
+      '설정 → 이용자 유형에서 이용자 유형을 선택해 주세요.',
       [
         { text: '나중에', style: 'cancel' },
-        { text: '마이페이지로 이동', onPress: () => router.push('/my-page' as Href) },
+        { text: '설정으로 이동', onPress: () => router.push('/settings' as Href) },
       ],
     );
-  }, [preferencesInitialized, routeProfile, router, username]);
+  }, [preferencesInitialized, routeProfile, router]);
 
   const chooseDestination = (point: RoutePoint, label?: string) => {
     Keyboard.dismiss();
@@ -172,9 +169,9 @@ export default function MapScreen() {
     const routeOrigin = origin ?? coordinates;
     if (!routeOrigin || !destination) return;
     if (!routeProfile) {
-      Alert.alert('사용자 유형을 정해 주세요', '마이페이지에서 이용자 유형을 먼저 설정해 주세요.', [
+      Alert.alert('사용자 유형을 정해 주세요', '설정 → 이용자 유형에서 이용자 유형을 먼저 설정해 주세요.', [
         { text: '취소', style: 'cancel' },
-        { text: '마이페이지로 이동', onPress: () => router.push('/my-page' as Href) },
+        { text: '설정으로 이동', onPress: () => router.push('/settings' as Href) },
       ]);
       return;
     }
