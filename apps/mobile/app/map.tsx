@@ -71,6 +71,7 @@ export default function MapScreen() {
   const [recenterRequest, setRecenterRequest] = useState(0);
   const [panelHeight, setPanelHeight] = useState(0);
   const profilePromptShown = useRef(false);
+  const busErrorShown = useRef(false);
 
   const {
     stops: busStops,
@@ -123,6 +124,20 @@ export default function MapScreen() {
       ],
     );
   }, [preferencesInitialized, routeProfile, router]);
+
+  useEffect(() => {
+    if (!showLiveBuses) return;
+    if (!busError || busErrorShown.current) return;
+
+    busErrorShown.current = true;
+    setShowLiveBuses(false);
+    Alert.alert(
+      '버스 정보를 불러올 수 없습니다',
+      busError.includes('등록되지 않은')
+        ? '공공데이터포털에서 현재 서비스키의 TAGO 버스정류소정보 활용 승인을 확인해 주세요.'
+        : busError,
+    );
+  }, [busError, setShowLiveBuses, showLiveBuses]);
 
   const chooseDestination = (point: RoutePoint, label?: string) => {
     Keyboard.dismiss();
@@ -282,26 +297,25 @@ export default function MapScreen() {
             <Ionicons name="menu" size={29} color="#FFFFFF" />
           </Pressable>
         </View>
-        {!!environment?.weather?.alerts.length && (
-          <View style={styles.weatherAlerts}>
-            {environment.weather.alerts.slice(0, 2).map((alert) => (
-              <View
-                key={`${alert.title}-${alert.message}`}
-                style={[styles.weatherAlert, alert.level === 'danger' && styles.weatherAlertDanger]}>
-                <Ionicons
-                  name={alert.title.includes('우천') ? 'rainy' : alert.title.includes('폭염') ? 'sunny' : 'warning'}
-                  size={18}
-                  color={alert.level === 'danger' ? '#B42318' : '#9A6700'}
-                />
-                <View style={styles.weatherAlertText}>
-                  <Text style={styles.weatherAlertTitle}>{alert.title}</Text>
-                  <Text style={styles.weatherAlertMessage} numberOfLines={2}>{alert.message}</Text>
-                </View>
-              </View>
-            ))}
-            <Text style={styles.weatherSource}>날씨: Open-Meteo</Text>
-          </View>
-        )}
+        {!!environment?.weather?.alerts.length && (() => {
+          const alert = environment.weather.alerts.find((item) => item.level === 'danger')
+            ?? environment.weather.alerts[0];
+          return (
+            <View
+              style={[styles.weatherAlert, alert.level === 'danger' && styles.weatherAlertDanger]}>
+              <Ionicons
+                name={alert.title.includes('우천') ? 'rainy' : alert.title.includes('폭염') ? 'sunny' : 'warning'}
+                size={15}
+                color={alert.level === 'danger' ? '#B42318' : '#9A6700'}
+              />
+              <Text style={styles.weatherAlertLine} numberOfLines={1}>
+                <Text style={styles.weatherAlertTitle}>{alert.title}</Text>
+                {` · ${alert.message}`}
+              </Text>
+              <Text style={styles.weatherSource}>Open-Meteo</Text>
+            </View>
+          );
+        })()}
         {searchError && <Text style={styles.searchError}>{searchError}</Text>}
         {searchResults.length > 0 && (
           <ScrollView
@@ -391,13 +405,15 @@ export default function MapScreen() {
       <View
         style={[styles.busToggleWrap, { bottom: insets.bottom + 12 + panelHeight + 12 }]}
         pointerEvents="box-none">
-        {showLiveBuses && busError && <Text style={styles.busError}>{busError}</Text>}
         <Pressable
           accessibilityRole="switch"
           accessibilityState={{ checked: showLiveBuses }}
           accessibilityLabel={showLiveBuses ? '실시간 버스 위치 끄기' : '실시간 버스 위치 켜기'}
           style={[styles.busToggle, showLiveBuses && styles.busToggleOn]}
-          onPress={() => setShowLiveBuses(!showLiveBuses)}>
+          onPress={() => {
+            if (!showLiveBuses) busErrorShown.current = false;
+            setShowLiveBuses(!showLiveBuses);
+          }}>
           {showLiveBuses && busesLoading ? (
             <ActivityIndicator size="small" color="#FFFFFF" />
           ) : (
@@ -412,13 +428,22 @@ export default function MapScreen() {
       <View
         style={[styles.panel, { bottom: insets.bottom + 12 }]}
         onLayout={(event) => setPanelHeight(event.nativeEvent.layout.height)}>
-        <View style={styles.panelHeader}>
-          <View>
-            <Text style={styles.title}>안전 경로</Text>
-            <Text style={styles.hint}>목적지를 선택하면 보행 경로를 안내해 드려요.</Text>
-          </View>
-          <Pressable accessibilityRole="button" accessibilityLabel="현재 위치로 이동" style={styles.locationButton} onPress={() => void moveToCurrentLocation()}>
-            <Ionicons name="locate" size={22} color="#167C5A" />
+        <View style={styles.quickActions}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="현재 위치로 이동"
+            style={styles.quickActionButton}
+            onPress={() => void moveToCurrentLocation()}>
+            <Ionicons name="locate" size={19} color="#167C5A" />
+            <Text style={styles.quickActionText}>현위치</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="위험사진 제보"
+            style={styles.quickActionButton}
+            onPress={openReport}>
+            <Ionicons name="camera-outline" size={19} color="#167C5A" />
+            <Text style={styles.quickActionText}>제보</Text>
           </Pressable>
         </View>
 
@@ -451,10 +476,6 @@ export default function MapScreen() {
           disabled={!destination || !(origin ?? coordinates)}
           loading={routeLoading}
         />
-        <Pressable style={styles.reportButton} onPress={openReport}>
-          <Ionicons name="camera-outline" size={20} color="#167C5A" />
-          <Text style={styles.reportText}>위험사진 제보</Text>
-        </Pressable>
       </View>
     </View>
   );
@@ -494,13 +515,11 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     elevation: 5,
   },
-  weatherAlerts: { marginHorizontal: 14, marginTop: 7, gap: 5 },
-  weatherAlert: { flexDirection: 'row', alignItems: 'center', gap: 9, paddingHorizontal: 12, paddingVertical: 9, borderRadius: 13, borderWidth: 1, borderColor: '#F0D58C', backgroundColor: '#FFF8E1', elevation: 4 },
+  weatherAlert: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 31, marginHorizontal: 14, marginTop: 6, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, borderWidth: 1, borderColor: '#F0D58C', backgroundColor: '#FFF8E1', elevation: 3 },
   weatherAlertDanger: { borderColor: '#FDA29B', backgroundColor: '#FFF1F0' },
-  weatherAlertText: { flex: 1 },
-  weatherAlertTitle: { color: '#6B4F00', fontSize: 13, fontWeight: '900' },
-  weatherAlertMessage: { marginTop: 1, color: '#5E5541', fontSize: 11, lineHeight: 15 },
-  weatherSource: { alignSelf: 'flex-end', marginRight: 5, color: '#71817B', fontSize: 9 },
+  weatherAlertLine: { flex: 1, color: '#5E5541', fontSize: 11, lineHeight: 15 },
+  weatherAlertTitle: { color: '#6B4F00', fontSize: 11, fontWeight: '900' },
+  weatherSource: { color: '#8B9692', fontSize: 8 },
   menuBackdrop: { flex: 1, backgroundColor: 'rgba(12, 28, 22, 0.28)' },
   accountMenu: { position: 'absolute', right: 14, width: 232, padding: 10, borderRadius: 18, backgroundColor: '#FFFFFF', elevation: 12, shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 14 },
   menuHeader: { flexDirection: 'row', alignItems: 'center', gap: 11, padding: 9 },
@@ -570,24 +589,13 @@ const styles = StyleSheet.create({
   busToggleOn: { backgroundColor: '#1F6FEB' },
   busToggleText: { color: '#40534C', fontSize: 13, fontWeight: '800' },
   busToggleTextOn: { color: '#FFFFFF' },
-  busError: {
-    maxWidth: 260,
-    paddingHorizontal: 11,
-    paddingVertical: 7,
-    borderRadius: 10,
-    color: '#B42318',
-    backgroundColor: '#FFF3F1',
-    fontSize: 12,
-    textAlign: 'right',
-    overflow: 'hidden',
-  },
   panel: {
     position: 'absolute',
     left: 12,
     right: 12,
     bottom: 12,
-    padding: 16,
-    gap: 12,
+    padding: 13,
+    gap: 9,
     backgroundColor: '#FFFFFF',
     borderRadius: 22,
     shadowColor: '#000',
@@ -595,12 +603,11 @@ const styles = StyleSheet.create({
     shadowRadius: 14,
     elevation: 8,
   },
-  panelHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  title: { fontSize: 18, fontWeight: '800', color: '#14251F' },
-  hint: { color: '#65756F', fontSize: 12, marginTop: 3 },
-  locationButton: { width: 42, height: 42, borderRadius: 14, backgroundColor: '#E9F5F0', alignItems: 'center', justifyContent: 'center' },
+  quickActions: { flexDirection: 'row', alignSelf: 'flex-end', gap: 7 },
+  quickActionButton: { width: 52, height: 47, alignItems: 'center', justifyContent: 'center', gap: 1, borderRadius: 12, borderWidth: 1, borderColor: '#D6E5DF', backgroundColor: '#F2F8F5' },
+  quickActionText: { color: '#167C5A', fontSize: 10, fontWeight: '800' },
   info: { color: '#52645E', fontSize: 12 },
-  selectedPlaces: { gap: 4, padding: 10, borderRadius: 12, backgroundColor: '#F2F7F4' },
+  selectedPlaces: { gap: 3, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 11, backgroundColor: '#F2F7F4' },
   selectedPlaceText: { color: '#40534C', fontSize: 12, fontWeight: '700' },
   travelModeRow: { flexDirection: 'row', gap: 8 },
   travelModeButton: { flex: 1, minHeight: 43, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderRadius: 12, borderWidth: 1, borderColor: '#CCDAD4', backgroundColor: '#F7FAF8' },
@@ -609,6 +616,4 @@ const styles = StyleSheet.create({
   travelModeText: { color: '#40534C', fontSize: 13, fontWeight: '800' },
   travelModeTextActive: { color: '#FFFFFF' },
   error: { color: '#B42318', fontSize: 12 },
-  reportButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingVertical: 5 },
-  reportText: { color: '#167C5A', fontWeight: '800' },
 });

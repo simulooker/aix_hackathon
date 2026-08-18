@@ -1,7 +1,6 @@
 import { env } from '@/src/constants/env';
 import type { AIAnalysisResponse, HazardReport, ReportResponse } from '@/src/types/hazard';
-import type { EnvironmentContext } from '@/src/types/environment';
-import type { DisasterZone } from '@/src/types/environment';
+import type { DisasterZone, EnvironmentContext } from '@/src/types/environment';
 import type { RoutePoint, RouteProfile, RouteResponse } from '@/src/types/route';
 
 const normalizedApiUrl = env.apiUrl.replace(/\/$/, '');
