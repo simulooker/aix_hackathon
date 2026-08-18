@@ -1,7 +1,7 @@
 import type { Href } from 'expo-router';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { SafeAreaView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Keyboard, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
 
 import { PrimaryButton } from '@/src/components/PrimaryButton';
 import { register, sendEmailOtp, verifyEmailOtp } from '@/src/services/api';
@@ -33,6 +33,7 @@ export default function RegisterScreen() {
 
   const requestOtp = () =>
     run(async () => {
+      Keyboard.dismiss();
       if (!username.trim() || !password) {
         throw new Error('아이디와 비밀번호를 먼저 입력해 주세요.');
       }
@@ -45,6 +46,7 @@ export default function RegisterScreen() {
 
   const confirmOtp = () =>
     run(async () => {
+      Keyboard.dismiss();
       if (!username.trim() || !password) {
         throw new Error('아이디와 비밀번호를 먼저 입력해 주세요.');
       }
@@ -55,12 +57,15 @@ export default function RegisterScreen() {
 
   const submit = () =>
     run(async () => {
+      Keyboard.dismiss();
       await register({ username: username.trim(), email: email.trim(), password });
       router.replace('/login' as Href);
     });
 
   return (
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
     <SafeAreaView style={styles.container}>
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
       <Text style={styles.title}>회원가입</Text>
       <Text style={styles.description}>이메일 인증 후 계정을 만들어 주세요.</Text>
 
@@ -98,6 +103,8 @@ export default function RegisterScreen() {
           placeholderTextColor="#7A8984"
           autoCapitalize="none"
           keyboardType="email-address"
+          returnKeyType="done"
+          onSubmitEditing={() => void requestOtp()}
           style={[styles.input, styles.flexInput]}
         />
         <TouchableOpacity style={styles.smallButton} onPress={() => void requestOtp()} disabled={!username || !password || !email || loading}>
@@ -116,6 +123,8 @@ export default function RegisterScreen() {
             placeholderTextColor="#7A8984"
             keyboardType="number-pad"
             maxLength={6}
+            returnKeyType="done"
+            onSubmitEditing={() => void confirmOtp()}
             style={[styles.input, styles.flexInput]}
           />
           <TouchableOpacity style={styles.smallButton} onPress={() => void confirmOtp()} disabled={!username || !password || !code || loading}>
@@ -133,12 +142,15 @@ export default function RegisterScreen() {
         loading={loading}
         disabled={!username || !password || !verified}
       />
+      </ScrollView>
     </SafeAreaView>
+    </TouchableWithoutFeedback>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F7FAF8', padding: 24 },
+  container: { flex: 1, backgroundColor: '#F7FAF8' },
+  content: { flexGrow: 1, padding: 24 },
   title: { fontSize: 30, fontWeight: '800', color: '#14251F', marginTop: 36 },
   description: { color: '#596A64', lineHeight: 21, marginVertical: 16 },
   row: { flexDirection: 'row', gap: 8 },

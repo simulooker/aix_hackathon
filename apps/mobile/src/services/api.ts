@@ -80,6 +80,14 @@ export async function changePassword(currentPassword: string, newPassword: strin
   if (!response.ok) throw new Error(await errorMessage(response));
 }
 
+export async function deleteAccount(): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/users/me`, {
+    method: 'DELETE',
+    headers: authenticatedHeaders(),
+  });
+  if (!response.ok) throw new Error(await errorMessage(response));
+}
+
 export async function sendEmailOtp(email: string): Promise<void> {
   const response = await fetch(`${API_BASE_URL}/send-otp`, {
     method: 'POST',

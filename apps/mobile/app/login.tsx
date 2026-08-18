@@ -1,7 +1,7 @@
 import type { Href } from 'expo-router';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Image, SafeAreaView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Image, Keyboard, SafeAreaView, StyleSheet, Text, TextInput, TouchableWithoutFeedback, View } from 'react-native';
 
 import { PrimaryButton } from '@/src/components/PrimaryButton';
 import { login } from '@/src/services/api';
@@ -16,6 +16,7 @@ export default function LoginScreen() {
   const [error, setError] = useState<string>();
 
   const submit = async () => {
+    Keyboard.dismiss();
     setLoading(true);
     setError(undefined);
     try {
@@ -31,6 +32,7 @@ export default function LoginScreen() {
   };
 
   return (
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
     <SafeAreaView style={styles.container}>
       <View style={styles.logoBackground}>
         <Image source={require('../assets/images/ai-safe-route-logo-v5.png')} style={styles.logo} />
@@ -38,13 +40,14 @@ export default function LoginScreen() {
       <Text style={styles.title}>로그인</Text>
       <Text style={styles.description}>계정에 로그인하고 안전 경로 서비스를 이용하세요.</Text>
       <Text style={styles.label}>아이디</Text>
-      <TextInput value={username} onChangeText={setUsername} placeholder="아이디를 입력해 주세요" placeholderTextColor="#7A8984" autoCapitalize="none" style={styles.input} />
+      <TextInput value={username} onChangeText={setUsername} placeholder="아이디를 입력해 주세요" placeholderTextColor="#7A8984" autoCapitalize="none" returnKeyType="next" style={styles.input} />
       <Text style={styles.label}>비밀번호</Text>
-      <TextInput value={password} onChangeText={setPassword} placeholder="비밀번호를 입력해 주세요" placeholderTextColor="#7A8984" secureTextEntry autoCapitalize="none" autoCorrect={false} textContentType="password" autoComplete="current-password" style={styles.input} />
+      <TextInput value={password} onChangeText={setPassword} placeholder="비밀번호를 입력해 주세요" placeholderTextColor="#7A8984" secureTextEntry autoCapitalize="none" autoCorrect={false} textContentType="password" autoComplete="current-password" returnKeyType="done" onSubmitEditing={() => void submit()} style={styles.input} />
       {error && <Text style={styles.error}>{error}</Text>}
       <PrimaryButton label="로그인" onPress={() => void submit()} loading={loading} disabled={!username || !password} />
       <Text style={styles.link} onPress={() => router.push('/register' as Href)}>계정이 없나요? 회원가입</Text>
     </SafeAreaView>
+    </TouchableWithoutFeedback>
   );
 }
 
