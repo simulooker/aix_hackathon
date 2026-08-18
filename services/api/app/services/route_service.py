@@ -15,6 +15,7 @@ ORS_API_KEY = settings.ors_api_key or ""
 # ORS 공식 v2 기본 엔드포인트
 ORS_BASE_URL = "https://api.openrouteservice.org"
 MAX_WALKING_DISTANCE_M = 10_000
+MAX_ROAD_WAYPOINTS = 25
 
 
 @dataclass(frozen=True)
@@ -258,6 +259,50 @@ def _avoid_polygons(zones: list[DisasterZone]) -> dict[str, Any] | None:
         ring.append(ring[0])
         polygons.append([ring])
     return {"type": "MultiPolygon", "coordinates": polygons} if polygons else None
+
+
+def calculate_road_route(points: list[Any]) -> RouteResult:
+    """버스 정류장 좌표들을 실제 자동차 도로망에 맞춰 연결합니다."""
+    coordinates: list[list[float]] = []
+    for point in points:
+        coordinate = [float(point.longitude), float(point.latitude)]
+        if coordinates and coordinate == coordinates[-1]:
+            continue
+        coordinates.append(coordinate)
+    if len(coordinates) < 2:
+        raise ValueError("도로 경로를 계산하려면 서로 다른 좌표가 2개 이상 필요합니다.")
+    if len(coordinates) > MAX_ROAD_WAYPOINTS:
+        raise ValueError(f"도로 경로 경유지는 {MAX_ROAD_WAYPOINTS}개 이하여야 합니다.")
+
+    raw_key = (ORS_API_KEY or "").strip()
+    if not raw_key:
+        raise RuntimeError("ORS_API_KEY가 설정되지 않았습니다.")
+    headers = {
+        "Authorization": f"Bearer {raw_key}" if not raw_key.startswith("Bearer ") else raw_key,
+        "Content-Type": "application/json; charset=utf-8",
+        "Accept": "application/json, application/geo+json",
+    }
+    body = {
+        "coordinates": coordinates,
+        # 오래된 정류장 좌표가 도로에서 지나치게 멀면 잘못된 직선을 만들지 않고 실패시킵니다.
+        "radiuses": [350] * len(coordinates),
+        "instructions": False,
+        "preference": "fastest",
+    }
+    url = f"{ORS_BASE_URL}/v2/directions/driving-car/geojson"
+    with httpx.Client(timeout=20.0) as client:
+        response = client.post(url, headers=headers, json=body)
+        if response.status_code != 200:
+            logger.error("ORS road-route request failed [%s]: %s", response.status_code, response.text)
+        response.raise_for_status()
+    candidates = _parse_ors_candidates(response.json(), [])
+    selected = min(candidates, key=lambda item: item.distance_m)
+    return RouteResult(
+        geometry=selected.geometry,
+        distance_m=selected.distance_m,
+        hazards_avoided=0,
+        used_fallback=False,
+    )
 
 
 def calculate_walking_route(

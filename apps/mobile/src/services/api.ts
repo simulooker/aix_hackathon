@@ -149,6 +149,10 @@ export async function getNearbyHazards(params: { latitude: number; longitude: nu
   return response.json();
 }
 
+export function getReportImageUrl(reportId: string): string {
+  return `${API_BASE_URL}/reports/${encodeURIComponent(reportId)}/image`;
+}
+
 export async function requestRoute(params: { origin: RoutePoint; destination: RoutePoint; profile: RouteProfile }): Promise<RouteResponse> {
   const response = await fetch(`${API_BASE_URL}/routes`, {
     method: 'POST',
@@ -159,6 +163,16 @@ export async function requestRoute(params: { origin: RoutePoint; destination: Ro
       prefer_safe_route: true,
       profile: params.profile,
     }),
+  });
+  if (!response.ok) throw new Error(await errorMessage(response));
+  return response.json();
+}
+
+export async function requestRoadRoute(points: RoutePoint[]): Promise<{ geometry: RoutePoint[]; distance_m: number }> {
+  const response = await fetch(`${API_BASE_URL}/routes/road`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ points }),
   });
   if (!response.ok) throw new Error(await errorMessage(response));
   return response.json();

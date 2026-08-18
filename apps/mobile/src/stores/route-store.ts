@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-import { getRouteDisasters, requestRoute } from '@/src/services/api';
+import { getRouteDisasters, requestRoadRoute, requestRoute } from '@/src/services/api';
 import { planBusJourney } from '@/src/services/bus';
 import { usePreferencesStore } from '@/src/stores/preferences-store';
 import type { RoutePoint, RouteResponse, TransitLeg } from '@/src/types/route';
@@ -33,19 +33,21 @@ async function walkingLeg(
   profile: 'general' | 'elderly' | 'wheelchair',
 ): Promise<RouteResponse> {
   const route = await requestRoute({ origin, destination, profile });
-  if (!route.geometry.length) {
-    return {
-      route_id: `walk-${Date.now()}`,
-      status: 'fallback',
-      message: '정류장까지의 도보 경로를 단순 연결했습니다.',
-      geometry: [origin, destination],
-      distance_m: 0,
-      hazards_avoided: 0,
-      hazards_on_route: [],
-      used_fallback_graph: true,
-    };
+  if (route.used_fallback_graph || route.geometry.length < 3) {
+    throw new Error('정류장까지 이어지는 실제 보행 경로를 찾지 못했습니다. 출발지나 목적지를 다시 선택해 주세요.');
   }
   return route;
+}
+
+function roadWaypoints(points: RoutePoint[], maximum = 25): RoutePoint[] {
+  if (points.length <= maximum) return points;
+  const sampled = Array.from({ length: maximum }, (_, index) => (
+    points[Math.round(index * (points.length - 1) / (maximum - 1))]
+  ));
+  return sampled.filter((point, index) => {
+    const previous = sampled[index - 1];
+    return !previous || previous.latitude !== point.latitude || previous.longitude !== point.longitude;
+  });
 }
 
 export const useRouteStore = create<RouteState>((set) => ({
@@ -83,9 +85,10 @@ export const useRouteStore = create<RouteState>((set) => ({
       const plan = await planBusJourney(origin, destination, disasters);
       const firstStop = plan.boardingStop;
       const lastStop = plan.alightingStop;
-      const [firstWalk, lastWalk] = await Promise.all([
+      const [firstWalk, lastWalk, roadLegs] = await Promise.all([
         walkingLeg(origin, firstStop, profile),
         walkingLeg(lastStop, destination, profile),
+        Promise.all(plan.segments.map((segment) => requestRoadRoute(roadWaypoints(segment.stops)))),
       ]);
       const legs: TransitLeg[] = [
         {
@@ -99,16 +102,8 @@ export const useRouteStore = create<RouteState>((set) => ({
           mode: 'bus' as const,
           fromName: segment.fromStop.name,
           toName: segment.toStop.name,
-          geometry: segment.stops.map((stop) => ({ latitude: stop.latitude, longitude: stop.longitude })),
-          distanceM: segment.stops.slice(1).reduce((total, stop, stopIndex) => {
-            const previous = segment.stops[stopIndex];
-            const latitudeScale = 111_320;
-            const longitudeScale = 91_000;
-            return total + Math.hypot(
-              (stop.latitude - previous.latitude) * latitudeScale,
-              (stop.longitude - previous.longitude) * longitudeScale,
-            );
-          }, 0),
+          geometry: roadLegs[index].geometry,
+          distanceM: roadLegs[index].distance_m,
           routeNo: segment.routeNo,
           stopCount: segment.stopCount,
           arrivalMinutes: segment.arrivalMinutes,

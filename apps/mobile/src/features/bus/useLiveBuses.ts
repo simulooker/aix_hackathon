@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
   BusApiKeyMissingError,
-  getNearbyBusStops,
+  getDisplayableNearbyBusStops,
 } from '@/src/services/bus';
 import type { BusStop, LiveBus } from '@/src/types/bus';
 import type { RoutePoint } from '@/src/types/route';
@@ -27,7 +27,7 @@ type UseLiveBusesResult = {
 };
 
 /**
- * 현재 위치 주변 버스정류장을 가져온다.
+ * 사용자가 현재 보고 있는 지도 중심 주변의 버스정류장을 가져온다.
  * 실시간 차량 위치 API는 별도 활용승인이 필요하므로 정류장 표시 기능에서는 호출하지 않는다.
  */
 export function useLiveBuses(coordinates: RoutePoint | undefined, enabled: boolean): UseLiveBusesResult {
@@ -64,7 +64,7 @@ export function useLiveBuses(coordinates: RoutePoint | undefined, enabled: boole
       if (!origin) return;
 
       try {
-        const nearbyStops = await getNearbyBusStops({ ...origin, limit: 50 });
+        const nearbyStops = await getDisplayableNearbyBusStops(origin);
         if (cancelled) return;
         const sorted = [...nearbyStops].sort(
           (left, right) => distanceMeters(origin, left) - distanceMeters(origin, right),

@@ -10,13 +10,37 @@ from starlette.concurrency import run_in_threadpool
 
 from app.db.session import get_db
 from app.models.report import HazardReport
-from app.schemas.navigation import RouteRequest, RouteResponse
+from app.schemas.navigation import (
+    RoadRouteRequest,
+    RoadRouteResponse,
+    RouteRequest,
+    RouteResponse,
+)
 from app.services.environment_service import fetch_disaster_zones, route_bbox
-from app.services.route_service import calculate_walking_route, distance_meters
+from app.services.route_service import (
+    calculate_road_route,
+    calculate_walking_route,
+    distance_meters,
+)
 
 router = APIRouter(prefix="/routes", tags=["routes"])
 logger = logging.getLogger(__name__)
 DatabaseSession = Annotated[Session, Depends(get_db)]
+
+
+@router.post("/road", response_model=RoadRouteResponse)
+async def create_road_route(payload: RoadRouteRequest) -> RoadRouteResponse:
+    try:
+        result = await run_in_threadpool(calculate_road_route, payload.points)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Road-route calculation failed")
+        raise HTTPException(
+            status_code=502,
+            detail="버스 구간의 실제 도로 경로를 계산하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+        ) from exc
+    return RoadRouteResponse(geometry=result.geometry, distance_m=result.distance_m)
 
 
 @router.post("", response_model=RouteResponse)

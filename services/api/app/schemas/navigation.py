@@ -27,6 +27,15 @@ class RouteRequest(BaseModel):
     profile: Literal["general", "elderly", "wheelchair"] = "general"
 
 
+class RoadRouteRequest(BaseModel):
+    points: list[Point] = Field(min_length=2, max_length=25)
+
+
+class RoadRouteResponse(BaseModel):
+    geometry: list[Point]
+    distance_m: float
+
+
 class RouteResponse(BaseModel):
     route_id: str
     status: str

@@ -19,6 +19,8 @@ type KakaoMapProps = {
   busStops?: BusStop[];
   buses?: LiveBus[];
   onMapPress?: (point: RoutePoint) => void;
+  onViewportChange?: (viewport: MapViewport) => void;
+  onHazardPress?: (hazard: HazardReport) => void;
   searchRequest?: { query: string; requestId: number };
   onSearchResults?: (results: KakaoPlace[]) => void;
   recenterRequest?: number;
@@ -36,6 +38,11 @@ export type KakaoPlace = {
   distanceM?: number;
 };
 
+export type MapViewport = {
+  center: RoutePoint;
+  level: number;
+};
+
 const KAKAO_BASE_URL = 'https://withyou-105736498036.asia-northeast3.run.app';
 
 export function KakaoMap({
@@ -50,6 +57,8 @@ export function KakaoMap({
   busStops = [],
   buses = [],
   onMapPress,
+  onViewportChange,
+  onHazardPress,
   searchRequest,
   onSearchResults,
   recenterRequest,
@@ -111,6 +120,8 @@ export function KakaoMap({
     .bus-pin .tail{position:absolute;left:50%;bottom:-5px;width:0;height:0;margin-left:-5px;
       border-left:5px solid transparent;border-right:5px solid transparent;border-top:6px solid #1f6feb}
     .bus-tip{padding:5px 8px;font:12px sans-serif;white-space:nowrap}
+    .hazard-marker{width:18px;height:18px;padding:0;border:2px solid #fff;border-radius:50%;
+      box-shadow:0 2px 6px rgba(0,0,0,.34);cursor:pointer}
     .disaster-pin{max-width:170px;padding:5px 9px;border:2px solid #fff;border-radius:13px;background:#b42318;color:#fff;
       box-shadow:0 2px 7px rgba(0,0,0,.32);font:800 11px/1.25 -apple-system,BlinkMacSystemFont,sans-serif;text-align:center}
     #slope-legend{position:fixed;top:12px;left:12px;z-index:20;display:none;flex-direction:column;gap:4px;
@@ -171,7 +182,7 @@ export function KakaoMap({
               openTip(position, escapeHtml(stop.name));
             });
             return new kakao.maps.CustomOverlay({
-              map: map, position: position, content: element,
+              map: map.getLevel() <= 4 ? map : null, position: position, content: element,
               xAnchor: 0.5, yAnchor: 0.5, zIndex: 3, clickable: true
             });
           });
@@ -231,6 +242,11 @@ export function KakaoMap({
             busOverlays[vehicleNo].overlay.setMap(null);
             delete busOverlays[vehicleNo];
           });
+        },
+
+        refreshStopVisibility: function () {
+          const visible = map.getLevel() <= 4;
+          stopOverlays.forEach(function (overlay) { overlay.setMap(visible ? map : null); });
         }
       };
     }
@@ -291,15 +307,19 @@ export function KakaoMap({
         const hazardOverlays = data.hazards.map(function (hazard) {
           const severity = Number(hazard.severity || 0);
           const color = severity >= 0.7 ? '#d92d20' : severity >= 0.4 ? '#f79009' : '#fdb022';
-          return new kakao.maps.Circle({
-            center: new kakao.maps.LatLng(hazard.latitude, hazard.longitude),
-            radius: 7,
-            strokeWeight: 2,
-            strokeColor: color,
-            strokeOpacity: 0.9,
-            fillColor: color,
-            fillOpacity: 0.85,
-            zIndex: 5
+          const position = new kakao.maps.LatLng(hazard.latitude, hazard.longitude);
+          const element = document.createElement('button');
+          element.type = 'button';
+          element.className = 'hazard-marker';
+          element.title = '위험 제보 보기';
+          element.style.background = color;
+          element.addEventListener('click', function (event) {
+            event.stopPropagation();
+            send('hazardPress', { hazardId: hazard.id });
+          });
+          return new kakao.maps.CustomOverlay({
+            map: map, position: position, content: element,
+            xAnchor: 0.5, yAnchor: 0.5, zIndex: 6, clickable: true
           });
         });
         function updateHazardVisibility() {
@@ -409,6 +429,19 @@ export function KakaoMap({
 
         window.__withyouBus = createBusLayer(map);
         send('busLayerReady', {});
+        function sendViewport() {
+          const mapCenter = map.getCenter();
+          send('viewport', {
+            latitude: mapCenter.getLat(),
+            longitude: mapCenter.getLng(),
+            level: map.getLevel()
+          });
+        }
+        sendViewport();
+        kakao.maps.event.addListener(map, 'idle', sendViewport);
+        kakao.maps.event.addListener(map, 'zoom_changed', function () {
+          window.__withyouBus.refreshStopVisibility();
+        });
 
         if (data.searchRequest && data.searchRequest.query && kakao.maps.services) {
           const places = new kakao.maps.services.Places();
@@ -498,7 +531,14 @@ export function KakaoMap({
 
   const handleMessage = (event: WebViewMessageEvent) => {
     try {
-      const message = JSON.parse(event.nativeEvent.data) as { type: string; latitude?: number; longitude?: number; results?: KakaoPlace[] };
+      const message = JSON.parse(event.nativeEvent.data) as {
+        type: string;
+        latitude?: number;
+        longitude?: number;
+        level?: number;
+        hazardId?: string;
+        results?: KakaoPlace[];
+      };
       if (message.type === 'ready') {
         setMapError(undefined);
       } else if (message.type === 'busLayerReady') {
@@ -508,6 +548,14 @@ export function KakaoMap({
         setMapError((message as { message?: string }).message ?? '카카오 지도를 불러오지 못했습니다.');
       } else if (message.type === 'press' && message.latitude != null && message.longitude != null) {
         onMapPress?.({ latitude: message.latitude, longitude: message.longitude });
+      } else if (message.type === 'viewport' && message.latitude != null && message.longitude != null && message.level != null) {
+        onViewportChange?.({
+          center: { latitude: message.latitude, longitude: message.longitude },
+          level: message.level,
+        });
+      } else if (message.type === 'hazardPress' && message.hazardId) {
+        const hazard = hazards.find((item) => item.id === message.hazardId);
+        if (hazard) onHazardPress?.(hazard);
       } else if (message.type === 'searchResults') {
         onSearchResults?.(message.results ?? []);
       }

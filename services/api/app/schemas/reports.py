@@ -37,3 +37,4 @@ class NearbyReport(BaseModel):
     severity: float
     status: str
     created_at: datetime
+    photo_path: str | None = None

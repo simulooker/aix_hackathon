@@ -1,6 +1,7 @@
 import asyncio
 from io import BytesIO
 from types import SimpleNamespace
+from uuid import uuid4
 
 from fastapi import UploadFile
 from fastapi.testclient import TestClient
@@ -66,3 +67,9 @@ def test_report_endpoint_requires_login() -> None:
     )
 
     assert response.status_code == 401
+
+
+def test_missing_report_image_returns_404() -> None:
+    response = TestClient(app).get(f"/api/v1/reports/{uuid4()}/image")
+
+    assert response.status_code == 404

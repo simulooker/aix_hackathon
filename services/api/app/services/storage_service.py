@@ -41,3 +41,20 @@ async def upload_report_image(
                 response = await client.post(url, headers=headers, content=contents)
     response.raise_for_status()
     return object_path
+
+
+async def download_report_image(object_path: str) -> tuple[bytes, str]:
+    if not settings.supabase_url or not settings.supabase_service_role_key:
+        raise RuntimeError("Supabase Storage가 설정되지 않았습니다.")
+    url = (
+        f"{settings.supabase_url.rstrip('/')}/storage/v1/object/authenticated/"
+        f"{settings.supabase_report_bucket}/{object_path.lstrip('/')}"
+    )
+    headers = {
+        "Authorization": f"Bearer {settings.supabase_service_role_key}",
+        "apikey": settings.supabase_service_role_key,
+    }
+    async with httpx.AsyncClient(timeout=20) as client:
+        response = await client.get(url, headers=headers)
+    response.raise_for_status()
+    return response.content, response.headers.get("content-type", "image/jpeg")

@@ -5,7 +5,6 @@ import type {
   BusRouteStop,
   BusRouteSummary,
   BusStop,
-  LiveBus,
 } from '@/src/types/bus';
 import type { RoutePoint } from '@/src/types/route';
 import type { DisasterZone } from '@/src/types/environment';
@@ -16,16 +15,15 @@ import type { DisasterZone } from '@/src/types/environment';
  * data.go.kr 에서 아래 3개 API 활용신청 후 발급받은 "일반 인증키(Decoding)" 를
  * apps/mobile/.env 의 EXPO_PUBLIC_BUS_API_KEY 에 넣어 주세요.
  *   - 국토교통부_(TAGO)_버스정류소정보
- *   - 국토교통부_(TAGO)_버스위치정보
+ *   - 국토교통부_(TAGO)_버스노선정보
+ *   - 국토교통부_(TAGO)_버스도착정보
  */
 const TAGO_BASE_URL = 'https://apis.data.go.kr/1613000';
 const STOP_SERVICE = `${TAGO_BASE_URL}/BusSttnInfoInqireService`;
-const LOCATION_SERVICE = `${TAGO_BASE_URL}/BusLcInfoInqireService`;
 const ROUTE_SERVICE = `${TAGO_BASE_URL}/BusRouteInfoInqireService`;
 const ARRIVAL_SERVICE = `${TAGO_BASE_URL}/ArvlInfoInqireService`;
-
-/** getCtyCodeList 조회에 실패했을 때 사용하는 광주광역시 기본 도시코드 */
-const GWANGJU_FALLBACK_CITY_CODE = 24;
+const MAX_NEARBY_STOP_DISTANCE_M = 900;
+const MAX_DISPLAY_STOPS = 30;
 
 export class BusApiKeyMissingError extends Error {
   constructor() {
@@ -137,27 +135,6 @@ async function tagoFetch<T>(url: string, params: Record<string, string | number>
   return itemsOf(payload);
 }
 
-let cachedCityCode: number | undefined;
-
-/** 광주광역시의 TAGO 도시코드를 조회한다. 실패 시 기본값으로 폴백. */
-export async function getGwangjuCityCode(): Promise<number> {
-  if (cachedCityCode != null) return cachedCityCode;
-  try {
-    const items = await tagoFetch<{ citycode?: number; cityname?: string }>(
-      `${LOCATION_SERVICE}/getCtyCodeList`,
-      { numOfRows: 200, pageNo: 1 },
-    );
-    // '광주' 부분일치는 경기도 광주시(31250)도 잡히므로 정확히 광주광역시만 고른다.
-    const gwangju =
-      items.find((item) => item.cityname?.trim() === '광주광역시') ??
-      items.find((item) => item.citycode === GWANGJU_FALLBACK_CITY_CODE);
-    cachedCityCode = gwangju?.citycode ?? GWANGJU_FALLBACK_CITY_CODE;
-  } catch {
-    cachedCityCode = GWANGJU_FALLBACK_CITY_CODE;
-  }
-  return cachedCityCode;
-}
-
 type StopItem = {
   nodeid?: string;
   nodenm?: string;
@@ -179,15 +156,29 @@ export async function getNearbyBusStops(params: {
     pageNo: 1,
   });
 
-  return items
-    .filter((item) => item.nodeid && item.gpslati != null && item.gpslong != null)
+  const unique = new Map<string, BusStop>();
+  items
+    .filter((item) => item.nodeid && item.gpslati != null && item.gpslong != null && item.citycode != null)
     .map((item) => ({
       nodeId: String(item.nodeid),
       name: item.nodenm ?? '정류장',
       latitude: Number(item.gpslati),
       longitude: Number(item.gpslong),
       cityCode: item.citycode,
-    }));
+    }))
+    .filter((stop) => (
+      Number.isFinite(stop.latitude)
+      && Number.isFinite(stop.longitude)
+      && stop.latitude >= 33
+      && stop.latitude <= 39
+      && stop.longitude >= 124
+      && stop.longitude <= 132
+      && distanceMeters(params, stop) <= MAX_NEARBY_STOP_DISTANCE_M
+    ))
+    .forEach((stop) => unique.set(`${stop.cityCode}:${stop.nodeId}`, stop));
+  return [...unique.values()]
+    .sort((left, right) => distanceMeters(params, left) - distanceMeters(params, right))
+    .slice(0, params.limit ?? 30);
 }
 
 type RouteItem = {
@@ -199,18 +190,21 @@ type RouteItem = {
 };
 
 /** 특정 정류장을 경유하는 노선 목록 */
+const routesThroughStopCache = new Map<string, Promise<BusRouteSummary[]>>();
+
 export async function getRoutesThroughStop(params: {
   cityCode: number;
   nodeId: string;
 }): Promise<BusRouteSummary[]> {
-  const items = await tagoFetch<RouteItem>(`${STOP_SERVICE}/getSttnThrghRouteList`, {
+  const cacheKey = `${params.cityCode}:${params.nodeId}`;
+  const cached = routesThroughStopCache.get(cacheKey);
+  if (cached) return cached;
+  const request = tagoFetch<RouteItem>(`${STOP_SERVICE}/getSttnThrghRouteList`, {
     cityCode: params.cityCode,
     nodeid: params.nodeId,
     numOfRows: 50,
     pageNo: 1,
-  });
-
-  return items
+  }).then((items) => items
     .filter((item) => item.routeid)
     .map((item) => ({
       routeId: String(item.routeid),
@@ -218,41 +212,38 @@ export async function getRoutesThroughStop(params: {
       routeType: item.routetp,
       startNodeName: item.startnodenm,
       endNodeName: item.endnodenm,
-    }));
+    })));
+  routesThroughStopCache.set(cacheKey, request);
+  try {
+    return await request;
+  } catch (error) {
+    routesThroughStopCache.delete(cacheKey);
+    throw error;
+  }
 }
 
-type BusLocationItem = {
-  vehicleno?: string;
-  routenm?: string | number;
-  gpslati?: number;
-  gpslong?: number;
-  nodenm?: string;
-  nodeord?: number;
-};
-
-/** 노선별 실시간 버스 위치 */
-export async function getBusesOnRoute(params: {
-  cityCode: number;
-  routeId: string;
-}): Promise<LiveBus[]> {
-  const items = await tagoFetch<BusLocationItem>(`${LOCATION_SERVICE}/getRouteAcctoBusLcList`, {
-    cityCode: params.cityCode,
-    routeId: params.routeId,
-    numOfRows: 100,
-    pageNo: 1,
-  });
-
-  return items
-    .filter((item) => item.gpslati != null && item.gpslong != null)
-    .map((item) => ({
-      vehicleNo: String(item.vehicleno ?? ''),
-      routeId: params.routeId,
-      routeNo: String(item.routenm ?? ''),
-      latitude: Number(item.gpslati),
-      longitude: Number(item.gpslong),
-      nodeName: item.nodenm,
-      nodeOrder: item.nodeord,
+/** 좌표가 정상이고 현재 운행 노선이 확인되는 가까운 정류장만 지도에 표시한다. */
+export async function getDisplayableNearbyBusStops(params: {
+  latitude: number;
+  longitude: number;
+}): Promise<BusStop[]> {
+  const candidates = await getNearbyBusStops({ ...params, limit: MAX_DISPLAY_STOPS });
+  const checked: BusStop[] = [];
+  // 공공데이터 서버에 30개 요청을 한꺼번에 보내면 일시 차단될 수 있어 5개씩 확인합니다.
+  for (let index = 0; index < candidates.length; index += 5) {
+    const batch = candidates.slice(index, index + 5);
+    const active = await Promise.all(batch.map(async (stop) => {
+      if (stop.cityCode == null) return undefined;
+      try {
+        const routes = await getRoutesThroughStop({ cityCode: stop.cityCode, nodeId: stop.nodeId });
+        return routes.length ? stop : undefined;
+      } catch {
+        return undefined;
+      }
     }));
+    checked.push(...active.filter((stop): stop is BusStop => stop != null));
+  }
+  return checked;
 }
 
 type RouteStopItem = StopItem & {
@@ -388,26 +379,46 @@ type StopWithRoutes = {
 async function stopsWithRoutes(stops: BusStop[]): Promise<StopWithRoutes[]> {
   const nearest = stops.slice(0, 4);
   return Promise.all(nearest.map(async (stop) => {
-    const cityCode = Number(stop.cityCode ?? await getGwangjuCityCode());
+    if (stop.cityCode == null) {
+      return { stop, cityCode: -1, routes: [] };
+    }
+    const cityCode = Number(stop.cityCode);
     return { stop, cityCode, routes: await getRoutesThroughStop({ cityCode, nodeId: stop.nodeId }) };
   }));
 }
 
-function scorePlan(plan: BusJourneyPlan): number {
-  const busStops = plan.segments.reduce((sum, segment) => sum + segment.stopCount, 0);
-  return plan.walkingDistanceM + busStops * 120 + plan.transferCount * 1000;
+function scorePlan(plan: BusJourneyPlan, directDistanceM: number): number {
+  const walkingMinutes = plan.walkingDistanceM / 75;
+  const busMinutes = plan.busDistanceM / 300;
+  const transferMinutes = plan.transferCount * 10;
+  const detourRatio = (plan.walkingDistanceM + plan.busDistanceM) / Math.max(1, directDistanceM);
+  const excessiveDetourMinutes = Math.max(0, detourRatio - 1.6) * 8;
+  return walkingMinutes + busMinutes + transferMinutes + excessiveDetourMinutes;
 }
 
-async function addArrival(plan: BusJourneyPlan): Promise<BusJourneyPlan> {
-  const first = plan.segments[0];
-  try {
-    const arrivals = await getArrivalsAtStop({ cityCode: first.cityCode, nodeId: first.fromStop.nodeId });
-    const arrival = arrivals.find((item) => item.routeId === first.routeId);
-    if (arrival) first.arrivalMinutes = arrival.arrivalMinutes;
-  } catch {
-    // 도착 정보가 없는 지역도 경로 자체는 표시한다.
-  }
-  plan.estimatedMinutes += first.arrivalMinutes ?? 0;
+function isReasonablePlan(plan: BusJourneyPlan, directDistanceM: number): boolean {
+  const totalDistance = plan.walkingDistanceM + plan.busDistanceM;
+  const maximumTotalDistance = Math.max(directDistanceM * 2.25, directDistanceM + 2500);
+  const maximumWalkingDistance = Math.min(2000, Math.max(900, directDistanceM * 0.45));
+  return totalDistance <= maximumTotalDistance && plan.walkingDistanceM <= maximumWalkingDistance;
+}
+
+async function addArrivals(plan: BusJourneyPlan): Promise<BusJourneyPlan> {
+  await Promise.all(plan.segments.map(async (segment) => {
+    try {
+      const arrivals = await getArrivalsAtStop({
+        cityCode: segment.cityCode,
+        nodeId: segment.fromStop.nodeId,
+      });
+      const arrival = arrivals.find((item) => (
+        item.routeId === segment.routeId || item.routeNo === segment.routeNo
+      ));
+      if (arrival) segment.arrivalMinutes = arrival.arrivalMinutes;
+    } catch {
+      // 일부 지역이 도착 정보를 제공하지 않아도 경로 자체는 유지한다.
+    }
+  }));
+  plan.estimatedMinutes += plan.segments[0]?.arrivalMinutes ?? 0;
   return plan;
 }
 
@@ -422,7 +433,6 @@ function completePlan(
     distanceMeters(origin, boardingStop) + distanceMeters(alightingStop, destination),
   );
   const busDistanceM = Math.round(segments.reduce((sum, segment) => sum + pathDistance(segment.stops), 0));
-  const stopCount = segments.reduce((sum, segment) => sum + segment.stopCount, 0);
   return {
     boardingStop,
     alightingStop,
@@ -430,12 +440,14 @@ function completePlan(
     transferCount: Math.max(0, segments.length - 1),
     walkingDistanceM,
     busDistanceM,
-    estimatedMinutes: Math.max(1, Math.round(walkingDistanceM / 75 + stopCount * 2)),
+    estimatedMinutes: Math.max(1, Math.round(
+      walkingDistanceM / 75 + busDistanceM / 300 + Math.max(0, segments.length - 1) * 8,
+    )),
   };
 }
 
 /**
- * 가까운 정류장을 기준으로 직행을 먼저 찾고, 없으면 1회 환승 경로를 찾는다.
+ * 가까운 정류장을 기준으로 직행과 1회 환승 경로를 함께 비교한다.
  * TAGO는 완성형 대중교통 길찾기 API가 아니므로 호출량과 오류 가능성을 줄이기 위해
  * 승·하차 후보를 각 4곳, 환승 노선을 각 6개로 제한한다.
  */
@@ -484,10 +496,6 @@ export async function planBusJourney(
       }
     }
   }
-  if (directPlans.length) {
-    return addArrival(directPlans.sort((left, right) => scorePlan(left) - scorePlan(right))[0]);
-  }
-
   const transferPlans: BusJourneyPlan[] = [];
   for (const start of starts.slice(0, 3)) {
     for (const end of ends.slice(0, 3)) {
@@ -522,10 +530,16 @@ export async function planBusJourney(
       }
     }
   }
-  if (!transferPlans.length) {
+  const directDistanceM = distanceMeters(origin, destination);
+  const allPlans = [...directPlans, ...transferPlans]
+    .filter((plan) => isReasonablePlan(plan, directDistanceM));
+  if (!allPlans.length) {
     throw new Error(disasters.length
       ? '재난·통제 구간을 피하는 버스 경로를 찾지 못했습니다. 다른 목적지나 도보 경로를 확인해 주세요.'
-      : '직행 또는 1회 환승 버스 경로를 찾지 못했습니다. 도보 경로를 이용해 주세요.');
+      : '지나치게 우회하지 않는 버스 경로를 찾지 못했습니다. 도보 경로를 이용해 주세요.');
   }
-  return addArrival(transferPlans.sort((left, right) => scorePlan(left) - scorePlan(right))[0]);
+  const selected = allPlans.sort(
+    (left, right) => scorePlan(left, directDistanceM) - scorePlan(right, directDistanceM),
+  )[0];
+  return addArrivals(selected);
 }

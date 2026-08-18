@@ -10,6 +10,7 @@ export type HazardReport = {
   severity: number | null;
   status: HazardStatus;
   created_at: string;
+  photo_path?: string | null;
 };
 
 export type ReportResponse = {

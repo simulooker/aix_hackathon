@@ -101,7 +101,7 @@ export default function NavigationScreen() {
                     {leg.mode === 'bus' ? ` · ${leg.stopCount ?? 0}개 정류장` : ` · ${formatDistance(leg.distanceM)}`}
                   </Text>
                   {leg.mode === 'bus' && leg.arrivalMinutes != null && (
-                    <Text style={styles.arrivalText}>약 {leg.arrivalMinutes}분 후 도착 예정</Text>
+                    <Text style={styles.arrivalText}>현재 기준 약 {leg.arrivalMinutes}분 후 정류장 도착 예정</Text>
                   )}
                 </View>
               </View>

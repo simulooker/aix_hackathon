@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   Keyboard,
   Modal,
   Pressable,
@@ -17,12 +18,12 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { KakaoMap, type KakaoPlace } from '@/src/components/KakaoMap';
+import { KakaoMap, type KakaoPlace, type MapViewport } from '@/src/components/KakaoMap';
 import { PrimaryButton } from '@/src/components/PrimaryButton';
 import { DEFAULT_REGION } from '@/src/constants/map';
 import { useLiveBuses } from '@/src/features/bus/useLiveBuses';
 import { useCurrentLocation } from '@/src/features/location/useCurrentLocation';
-import { getEnvironmentContext, getNearbyHazards } from '@/src/services/api';
+import { getEnvironmentContext, getNearbyHazards, getReportImageUrl } from '@/src/services/api';
 import { useAuthStore } from '@/src/stores/auth-store';
 import { usePreferencesStore } from '@/src/stores/preferences-store';
 import { useRouteStore } from '@/src/stores/route-store';
@@ -33,6 +34,14 @@ import type { RoutePoint } from '@/src/types/route';
 
 const EMPTY_STOPS: BusStop[] = [];
 const EMPTY_BUSES: LiveBus[] = [];
+const HAZARD_LABELS: Record<string, string> = {
+  person: '보행자',
+  motor_vehicle: '차량',
+  two_wheeler: '자전거·오토바이',
+  mobility_aid: '이동 보조기기',
+  movable_obstacle: '이동식 장애물',
+  fixed_obstacle: '고정 장애물',
+};
 
 export default function MapScreen() {
   const router = useRouter();
@@ -69,6 +78,8 @@ export default function MapScreen() {
   const [searchResults, setSearchResults] = useState<KakaoPlace[]>([]);
   const [accountMenuVisible, setAccountMenuVisible] = useState(false);
   const [recenterRequest, setRecenterRequest] = useState(0);
+  const [mapViewport, setMapViewport] = useState<MapViewport>();
+  const [selectedHazard, setSelectedHazard] = useState<HazardReport>();
   const [panelHeight, setPanelHeight] = useState(0);
   const profilePromptShown = useRef(false);
   const busErrorShown = useRef(false);
@@ -78,7 +89,10 @@ export default function MapScreen() {
     buses,
     loading: busesLoading,
     error: busError,
-  } = useLiveBuses(coordinates, showLiveBuses);
+  } = useLiveBuses(
+    mapViewport?.level != null && mapViewport.level <= 4 ? mapViewport.center : undefined,
+    showLiveBuses && mapViewport?.level != null && mapViewport.level <= 4,
+  );
 
   // 매 렌더마다 새 배열을 넘기면 지도 WebView 가 불필요하게 다시 그려진다.
   const visibleBusStops = useMemo(() => (showLiveBuses ? busStops : EMPTY_STOPS), [busStops, showLiveBuses]);
@@ -253,6 +267,8 @@ export default function MapScreen() {
         busStops={visibleBusStops}
         buses={visibleBuses}
         onMapPress={(point) => chooseDestination(point, '지도에서 선택한 위치')}
+        onViewportChange={setMapViewport}
+        onHazardPress={setSelectedHazard}
         searchRequest={searchRequest}
         onSearchResults={(results) => {
           setSearching(false);
@@ -265,6 +281,45 @@ export default function MapScreen() {
         }}
         recenterRequest={recenterRequest}
       />
+
+      <Modal
+        visible={!!selectedHazard}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSelectedHazard(undefined)}>
+        <Pressable style={styles.hazardBackdrop} onPress={() => setSelectedHazard(undefined)}>
+          <Pressable style={styles.hazardCard} onPress={(event) => event.stopPropagation()}>
+            <View style={styles.hazardModalHeader}>
+              <View>
+                <Text style={styles.hazardModalTitle}>위험 제보</Text>
+                <Text style={styles.hazardModalType}>
+                  {selectedHazard?.hazard_type
+                    ? HAZARD_LABELS[selectedHazard.hazard_type] ?? '위험 요소'
+                    : '위험 요소'}
+                </Text>
+              </View>
+              <Pressable onPress={() => setSelectedHazard(undefined)} hitSlop={10}>
+                <Ionicons name="close" size={25} color="#40534C" />
+              </Pressable>
+            </View>
+            {selectedHazard?.photo_path ? (
+              <Image
+                source={{ uri: getReportImageUrl(selectedHazard.id) }}
+                style={styles.hazardPhoto}
+                resizeMode="cover"
+              />
+            ) : (
+              <View style={styles.hazardPhotoEmpty}>
+                <Ionicons name="image-outline" size={30} color="#71817B" />
+                <Text style={styles.hazardPhotoEmptyText}>저장된 제보 사진이 없습니다.</Text>
+              </View>
+            )}
+            <Text style={styles.hazardModalDetail}>
+              위험도 {Math.round((selectedHazard?.severity ?? 0) * 100)}%
+            </Text>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       <SafeAreaView style={styles.topArea} pointerEvents="box-none">
         <View style={[styles.topRow, { paddingTop: insets.top + 10 }]}>
@@ -521,6 +576,15 @@ const styles = StyleSheet.create({
   weatherAlertDanger: { borderColor: '#FDA29B', backgroundColor: '#FFF1F0' },
   weatherAlertLine: { flex: 1, color: '#5E5541', fontSize: 11, lineHeight: 15 },
   weatherAlertTitle: { color: '#6B4F00', fontSize: 11, fontWeight: '900' },
+  hazardBackdrop: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: 'rgba(12, 28, 22, 0.46)' },
+  hazardCard: { width: '100%', maxWidth: 420, padding: 16, borderRadius: 20, backgroundColor: '#FFFFFF', elevation: 14, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 16 },
+  hazardModalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  hazardModalTitle: { color: '#14251F', fontSize: 19, fontWeight: '900' },
+  hazardModalType: { marginTop: 2, color: '#B42318', fontSize: 13, fontWeight: '800' },
+  hazardPhoto: { width: '100%', aspectRatio: 4 / 3, borderRadius: 14, backgroundColor: '#E7EFEB' },
+  hazardPhotoEmpty: { width: '100%', aspectRatio: 4 / 3, alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 14, backgroundColor: '#EEF3F0' },
+  hazardPhotoEmptyText: { color: '#71817B', fontSize: 13, fontWeight: '700' },
+  hazardModalDetail: { marginTop: 11, color: '#596A64', fontSize: 13, fontWeight: '700' },
   menuBackdrop: { flex: 1, backgroundColor: 'rgba(12, 28, 22, 0.28)' },
   accountMenu: { position: 'absolute', right: 14, width: 232, padding: 10, borderRadius: 18, backgroundColor: '#FFFFFF', elevation: 12, shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 14 },
   menuHeader: { flexDirection: 'row', alignItems: 'center', gap: 11, padding: 9 },

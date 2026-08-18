@@ -1,5 +1,6 @@
 from math import cos, radians
 from typing import Annotated
+from uuid import UUID
 
 import httpx
 from fastapi import (
@@ -12,6 +13,7 @@ from fastapi import (
     UploadFile,
     status,
 )
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
@@ -21,12 +23,24 @@ from app.models.report import HazardReport
 from app.models.user import User
 from app.schemas.reports import NearbyReport, ReportResponse
 from app.services.ai_service import AIModelUnavailable, get_ai_service
-from app.services.storage_service import upload_report_image
+from app.services.storage_service import download_report_image, upload_report_image
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 RISK_SEVERITY = {"none": 0.0, "low": 0.25, "medium": 0.6, "high": 1.0}
 DatabaseSession = Annotated[Session, Depends(get_db)]
 AuthenticatedUser = Annotated[User, Depends(get_current_user)]
+
+
+@router.get("/{report_id}/image")
+async def get_report_image(report_id: UUID, db: DatabaseSession) -> Response:
+    report = db.get(HazardReport, report_id)
+    if report is None or not report.photo_path:
+        raise HTTPException(404, "제보 사진을 찾을 수 없습니다.")
+    try:
+        contents, content_type = await download_report_image(report.photo_path)
+    except (httpx.HTTPError, RuntimeError) as exc:
+        raise HTTPException(502, "제보 사진을 불러오지 못했습니다.") from exc
+    return Response(content=contents, media_type=content_type)
 
 
 @router.post("", response_model=ReportResponse, status_code=status.HTTP_201_CREATED)
