@@ -130,8 +130,11 @@ export default function MapScreen() {
   const hazardViewportKey = mapViewport && mapViewport.level <= 5
     ? `${mapViewport.center.latitude.toFixed(3)},${mapViewport.center.longitude.toFixed(3)},${mapViewport.level}`
     : '';
-  const environmentLocationKey = coordinates
-    ? `${coordinates.latitude.toFixed(3)},${coordinates.longitude.toFixed(3)}`
+  // 재난 구간은 제보 위험과 마찬가지로 보고 있는 지도 영역을 기준으로 조회한다.
+  // (현재 위치만 기준으로 하면 멀리 떨어진 지역을 지도에서 봐도 재난이 뜨지 않는다.)
+  const environmentCenter = mapViewport?.center ?? coordinates;
+  const environmentLocationKey = environmentCenter
+    ? `${environmentCenter.latitude.toFixed(3)},${environmentCenter.longitude.toFixed(3)}`
     : '';
 
   useEffect(() => {
@@ -158,7 +161,7 @@ export default function MapScreen() {
   }, [hazardViewportKey, showHazards]);
 
   useEffect(() => {
-    const currentCoordinates = locationRef.current;
+    const currentCoordinates = mapViewportRef.current?.center ?? locationRef.current;
     if (!currentCoordinates) return;
     getEnvironmentContext({
       ...currentCoordinates,
@@ -297,7 +300,7 @@ export default function MapScreen() {
     setMapDataRefreshing(true);
     const tasks: Promise<unknown>[] = [];
     const viewport = mapViewportRef.current;
-    const currentCoordinates = locationRef.current;
+    const currentCoordinates = viewport?.center ?? locationRef.current;
 
     if (showHazards && viewport && viewport.level <= 5) {
       const radiusM = viewport.level >= 5 ? 1600 : viewport.level === 4 ? 900 : 500;
