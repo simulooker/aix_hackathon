@@ -19,7 +19,9 @@ def ensure_hazard_report_columns(engine: Engine) -> None:
     postgres_columns = {
         "latitude": "DOUBLE PRECISION",
         "longitude": "DOUBLE PRECISION",
-        "status": "VARCHAR(20) NOT NULL DEFAULT 'verified'",
+        "is_active": "BOOLEAN NOT NULL DEFAULT TRUE",
+        "heading_deg": "DOUBLE PRECISION",
+        "heading_accuracy": "INTEGER",
         "hazard_type": "VARCHAR(80)",
         "confidence": "DOUBLE PRECISION",
         "severity": "DOUBLE PRECISION NOT NULL DEFAULT 0",

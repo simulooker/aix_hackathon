@@ -106,6 +106,8 @@ class AIService:
     ) -> str:
         if not on_walkway:
             return "none"
+        if label == "person":
+            return "none"
 
         # The bottom of a detected box is a useful monocular distance proxy.
         # Far-away objects should contribute less than objects near the user.
@@ -122,8 +124,8 @@ class AIService:
             return "none"
 
         if remaining and remaining < 0.07 and effective_blocked >= 0.25:
-            return "medium" if label in {"person", "mobility_aid"} else "high"
-        if label in {"person", "mobility_aid"}:
+            return "medium" if label == "mobility_aid" else "high"
+        if label == "mobility_aid":
             if effective_blocked >= 0.35:
                 return "medium"
             return "low" if effective_blocked >= 0.10 else "none"
@@ -187,7 +189,10 @@ class AIService:
             "walkway_detected": bool(mask.any()),
             "overall_risk": risk,
             "obstacles_detected": len(detections),
-            "obstacles_on_walkway": sum(item["on_walkway"] for item in detections),
+            "obstacles_on_walkway": sum(
+                item["on_walkway"] and item["risk"] != "none"
+                for item in detections
+            ),
             "detections": detections,
         }
 

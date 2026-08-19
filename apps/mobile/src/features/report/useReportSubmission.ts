@@ -11,10 +11,22 @@ export type ReportSubmissionState =
 
 export function useReportSubmission() {
   const [state, setState] = useState<ReportSubmissionState>({ status: 'idle' });
-  const submit = useCallback(async (photoUri: string, latitude: number, longitude: number) => {
+  const submit = useCallback(async (
+    photoUri: string,
+    latitude: number,
+    longitude: number,
+    headingDeg?: number,
+    headingAccuracy?: number,
+  ) => {
     setState({ status: 'submitting' });
     try {
-      const result = await submitReport({ photoUri, latitude, longitude });
+      const result = await submitReport({
+        photoUri,
+        latitude,
+        longitude,
+        headingDeg,
+        headingAccuracy,
+      });
       setState({ status: 'success', result });
       return result;
     } catch (error) {

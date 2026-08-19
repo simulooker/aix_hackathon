@@ -23,6 +23,7 @@ type UseLiveBusesResult = {
   loading: boolean;
   error?: string;
   updatedAt?: number;
+  refresh: () => void;
 };
 
 /**
@@ -34,6 +35,7 @@ export function useLiveBuses(coordinates: RoutePoint | undefined, enabled: boole
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
   const [updatedAt, setUpdatedAt] = useState<number>();
+  const [refreshKey, setRefreshKey] = useState(0);
 
   // 위치 객체가 자주 바뀌어도 약 100m 이상 이동했을 때만 다시 조회한다.
   const coordinatesRef = useRef(coordinates);
@@ -47,6 +49,10 @@ export function useLiveBuses(coordinates: RoutePoint | undefined, enabled: boole
     setError(undefined);
     setUpdatedAt(undefined);
     setLoading(false);
+  }, []);
+
+  const refresh = useCallback(() => {
+    setRefreshKey((value) => value + 1);
   }, []);
 
   useEffect(() => {
@@ -88,7 +94,7 @@ export function useLiveBuses(coordinates: RoutePoint | undefined, enabled: boole
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [coordinateKey, enabled, reset]);
+  }, [coordinateKey, enabled, refreshKey, reset]);
 
-  return { stops, loading, error, updatedAt };
+  return { stops, loading, error, updatedAt, refresh };
 }

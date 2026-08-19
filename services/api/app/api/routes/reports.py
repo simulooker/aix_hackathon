@@ -1,4 +1,4 @@
-from math import cos, radians
+from math import asin, cos, radians, sin, sqrt
 from typing import Annotated
 from uuid import UUID
 
@@ -27,8 +27,76 @@ from app.services.storage_service import download_report_image, upload_report_im
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 RISK_SEVERITY = {"none": 0.0, "low": 0.25, "medium": 0.6, "high": 1.0}
+TRANSIENT_HAZARD_LABELS = {"motor_vehicle", "two_wheeler"}
+REPORT_CONFIRMATION_RADIUS_M = 5.0
+REPORT_CONFIRMATION_DIRECTION_DEGREES = 30.0
+MINIMUM_HEADING_ACCURACY = 2
 DatabaseSession = Annotated[Session, Depends(get_db)]
 AuthenticatedUser = Annotated[User, Depends(get_current_user)]
+
+
+def _distance_meters(
+    first_latitude: float,
+    first_longitude: float,
+    second_latitude: float,
+    second_longitude: float,
+) -> float:
+    latitude_delta = radians(second_latitude - first_latitude)
+    longitude_delta = radians(second_longitude - first_longitude)
+    first_latitude_radians = radians(first_latitude)
+    second_latitude_radians = radians(second_latitude)
+    value = sin(latitude_delta / 2) ** 2 + (
+        cos(first_latitude_radians)
+        * cos(second_latitude_radians)
+        * sin(longitude_delta / 2) ** 2
+    )
+    return 6_371_000 * 2 * asin(sqrt(value))
+
+
+def _matching_reports(
+    db: Session,
+    latitude: float,
+    longitude: float,
+    hazard_type: str,
+    heading_deg: float | None,
+    heading_accuracy: int | None,
+) -> list[HazardReport]:
+    if (
+        heading_deg is None
+        or heading_accuracy is None
+        or heading_accuracy < MINIMUM_HEADING_ACCURACY
+    ):
+        return []
+    latitude_delta = REPORT_CONFIRMATION_RADIUS_M / 111_320
+    longitude_delta = REPORT_CONFIRMATION_RADIUS_M / max(
+        1, 111_320 * cos(radians(latitude))
+    )
+    candidates = (
+        db.query(HazardReport)
+        .filter(
+            HazardReport.hazard_type == hazard_type,
+            HazardReport.heading_deg.is_not(None),
+            HazardReport.heading_accuracy >= MINIMUM_HEADING_ACCURACY,
+            HazardReport.severity > 0,
+            HazardReport.latitude.between(
+                latitude - latitude_delta, latitude + latitude_delta
+            ),
+            HazardReport.longitude.between(
+                longitude - longitude_delta, longitude + longitude_delta
+            ),
+        )
+        .all()
+    )
+    return [
+        report
+        for report in candidates
+        if _distance_meters(
+            latitude, longitude, report.latitude, report.longitude
+        )
+        <= REPORT_CONFIRMATION_RADIUS_M
+        and abs((heading_deg - report.heading_deg + 180) % 360 - 180)
+        <= REPORT_CONFIRMATION_DIRECTION_DEGREES
+    ]
 
 
 @router.get("/{report_id}/image")
@@ -50,6 +118,8 @@ async def create_report(
     longitude: Annotated[float, Form(ge=-180, le=180)],
     db: DatabaseSession,
     _current_user: AuthenticatedUser,
+    heading_deg: Annotated[float | None, Form(ge=0, lt=360)] = None,
+    heading_accuracy: Annotated[int | None, Form(ge=0, le=3)] = None,
 ) -> ReportResponse:
     if abs(latitude) < 0.000001 and abs(longitude) < 0.000001:
         raise HTTPException(422, "사진의 올바른 촬영 위치를 확인할 수 없습니다.")
@@ -63,25 +133,30 @@ async def create_report(
     except AIModelUnavailable as exc:
         raise HTTPException(503, str(exc)) from exc
 
-    on_walkway = [item for item in analysis["detections"] if item["on_walkway"]]
+    reportable_on_walkway = [
+        item
+        for item in analysis["detections"]
+        if item["on_walkway"] and item["risk"] != "none"
+    ]
     has_reportable_hazard = (
         analysis["walkway_detected"]
         and analysis["overall_risk"] != "none"
-        and bool(on_walkway)
+        and bool(reportable_on_walkway)
     )
     if not has_reportable_hazard:
         return ReportResponse(
             report_id=None,
-            status="not_saved",
+            is_active=False,
             filename=image.filename,
             latitude=latitude,
             longitude=longitude,
+            heading_deg=heading_deg,
+            heading_accuracy=heading_accuracy,
             hazard_type=None,
             confidence=None,
             severity=0,
             overall_risk="none",
             photo_path=None,
-            is_active=True,
             model_ready=analysis["model_ready"],
             walkway_detected=analysis["walkway_detected"],
             obstacles_detected=analysis["obstacles_detected"],
@@ -100,36 +175,61 @@ async def create_report(
         ) from exc
 
     most_serious = max(
-        on_walkway, key=lambda item: RISK_SEVERITY[item["risk"]], default=None
+        reportable_on_walkway,
+        key=lambda item: RISK_SEVERITY[item["risk"]],
+        default=None,
     )
-    labels = sorted({item["label"] for item in on_walkway})
+    labels = sorted({item["label"] for item in reportable_on_walkway})
+    requires_confirmation = bool(labels) and set(labels).issubset(
+        TRANSIENT_HAZARD_LABELS
+    )
+    matching_reports = (
+        _matching_reports(
+            db,
+            latitude,
+            longitude,
+            most_serious["label"],
+            heading_deg,
+            heading_accuracy,
+        )
+        if requires_confirmation
+        else []
+    )
+    is_active = not requires_confirmation or bool(matching_reports)
     report = HazardReport(
         latitude=latitude,
         longitude=longitude,
+        heading_deg=heading_deg,
+        heading_accuracy=heading_accuracy,
         hazard_type=most_serious["label"],
-        confidence=max((item["confidence"] for item in on_walkway), default=None),
+        confidence=max(
+            (item["confidence"] for item in reportable_on_walkway), default=None
+        ),
         severity=RISK_SEVERITY[analysis["overall_risk"]],
         overall_risk=analysis["overall_risk"],
         detected_labels=",".join(labels) or None,
         photo_path=photo_path,
-        status="verified",
-        is_active=True,
+        is_active=is_active,
     )
     db.add(report)
+    if is_active:
+        for matching_report in matching_reports:
+            matching_report.is_active = True
     db.commit()
     db.refresh(report)
     return ReportResponse(
         report_id=report.id,
-        status=report.status,
+        is_active=report.is_active,
         filename=image.filename,
         latitude=report.latitude,
         longitude=report.longitude,
+        heading_deg=report.heading_deg,
+        heading_accuracy=report.heading_accuracy,
         hazard_type=report.hazard_type,
         confidence=report.confidence,
         severity=report.severity,
         overall_risk=report.overall_risk,
         photo_path=report.photo_path,
-        is_active=report.is_active,
         model_ready=analysis["model_ready"],
         walkway_detected=analysis["walkway_detected"],
         obstacles_detected=analysis["obstacles_detected"],
@@ -150,9 +250,8 @@ def get_nearby_reports(
     return (
         db.query(HazardReport)
         .filter(
-            HazardReport.status.in_(["verified", "pending"]),
-            HazardReport.severity > 0,
             HazardReport.is_active.is_(True),
+            HazardReport.severity > 0,
             HazardReport.latitude.between(lat - latitude_delta, lat + latitude_delta),
             HazardReport.longitude.between(
                 lon - longitude_delta, lon + longitude_delta

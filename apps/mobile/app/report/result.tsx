@@ -19,9 +19,9 @@ const labelColor: Record<string,string>={
 };
 
 export default function ReportResultScreen(){
-  const router=useRouter(); const {uri,latitude,longitude}=useLocalSearchParams<{uri:string;latitude:string;longitude:string}>(); const {state,submit}=useReportSubmission();
-  useEffect(()=>{if(uri&&latitude&&longitude) void submit(uri,Number(latitude),Number(longitude));},[uri,latitude,longitude,submit]);
-  const visibleDetections=state.status==='success'?state.result.detections.filter(item=>item.on_walkway):[];
+  const router=useRouter(); const {uri,latitude,longitude,heading,headingAccuracy}=useLocalSearchParams<{uri:string;latitude:string;longitude:string;heading?:string;headingAccuracy?:string}>(); const {state,submit}=useReportSubmission();
+  useEffect(()=>{if(uri&&latitude&&longitude) void submit(uri,Number(latitude),Number(longitude),heading==null?undefined:Number(heading),headingAccuracy==null?undefined:Number(headingAccuracy));},[uri,latitude,longitude,heading,headingAccuracy,submit]);
+  const visibleDetections=state.status==='success'?state.result.detections:[];
   const detectedKinds=[...new Map(visibleDetections.map(item=>[item.label,item])).values()];
   return <SafeAreaView style={styles.safe}><ScrollView contentContainerStyle={styles.container}>
     {uri&&<View style={styles.imageFrame}>
@@ -43,17 +43,18 @@ export default function ReportResultScreen(){
     {state.status==='submitting'&&<View style={styles.box}><Text style={styles.title}>AI가 보행환경을 분석하고 있습니다.</Text><Text style={styles.analysisTime}>사진 분석에는 약 1분 정도가 소요됩니다.</Text><PrimaryButton label="분석 중" onPress={()=>{}} loading style={styles.button}/></View>}
     {state.status==='success'&&<View style={styles.box}>
       <Text style={[styles.risk,{color:riskColor[state.result.overall_risk]}]}>{riskText[state.result.overall_risk]}</Text>
-      <Text style={styles.body}>감지된 위험</Text>
+      <Text style={styles.body}>감지된 객체</Text>
       {detectedKinds.map(item=><View key={item.label} style={styles.legendItem}>
         <View style={[styles.legendSwatch,{backgroundColor:labelColor[item.label]??'#B42318'}]}/>
-        <Text style={styles.item}>{labelText[item.label]??'장애물'}</Text>
+        <Text style={styles.item}>{labelText[item.label]??'장애물'}{item.label==='person'?' · 위험도 미반영':''}</Text>
       </View>)}
       {state.result.obstacles_on_walkway===0&&<Text style={styles.item}>보행을 방해하는 위험이 감지되지 않았습니다.</Text>}
-      {state.result.status==='not_saved'&&<Text style={styles.notSaved}>위험요소가 없어 사진과 위치 정보는 서버에 저장하지 않았습니다.</Text>}
+      {state.result.report_id==null&&<Text style={styles.notSaved}>위험요소가 없어 사진과 위치 정보는 서버에 저장하지 않았습니다.</Text>}
+      {state.result.report_id!=null&&!state.result.is_active&&<Text style={styles.notSaved}>사진은 저장되었습니다. 5m 이내에서 같은 방향의 동일한 위험요소가 한 번 더 제보되면 지도와 안전 경로에 반영됩니다.</Text>}
       <PrimaryButton label="다른 사진 분석" onPress={()=>router.replace('/report/camera' as Href)} style={styles.button}/>
       <PrimaryButton label="홈으로" variant="dark" onPress={()=>router.replace('/' as Href)} style={styles.button}/>
     </View>}
-    {state.status==='error'&&<View style={styles.box}><Text style={styles.error}>{state.message}</Text><PrimaryButton label="다시 시도" onPress={()=>uri&&latitude&&longitude&&void submit(uri,Number(latitude),Number(longitude))} style={styles.button}/></View>}
+    {state.status==='error'&&<View style={styles.box}><Text style={styles.error}>{state.message}</Text><PrimaryButton label="다시 시도" onPress={()=>uri&&latitude&&longitude&&void submit(uri,Number(latitude),Number(longitude),heading==null?undefined:Number(heading),headingAccuracy==null?undefined:Number(headingAccuracy))} style={styles.button}/></View>}
   </ScrollView></SafeAreaView>;
 }
 const styles=StyleSheet.create({safe:{flex:1,backgroundColor:'#F7FAF8'},container:{padding:24},imageFrame:{width:'100%',height:300,borderRadius:20,backgroundColor:'#E7EFEB',overflow:'hidden'},image:{width:'100%',height:'100%',resizeMode:'stretch'},detectionLayer:{...StyleSheet.absoluteFillObject},detectionBox:{position:'absolute',borderWidth:1},detectionLabel:{position:'absolute',maxWidth:150,paddingHorizontal:5,paddingVertical:2,color:'#FFF',fontSize:10,fontWeight:'800'},box:{marginTop:20,backgroundColor:'#FFF',borderRadius:18,padding:20,borderWidth:1,borderColor:'#DCE7E2'},title:{fontSize:18,fontWeight:'800',color:'#14251F'},analysisTime:{marginTop:8,color:'#65756F',fontSize:13,lineHeight:19},risk:{fontSize:26,fontWeight:'900',marginBottom:14},body:{color:'#596A64',lineHeight:22},legendItem:{flexDirection:'row',alignItems:'center',gap:8,marginTop:6},legendSwatch:{width:11,height:11,borderRadius:2},item:{color:'#324A42',fontSize:13,lineHeight:20},notSaved:{marginTop:10,padding:10,borderRadius:10,color:'#52645E',backgroundColor:'#EEF3F0',fontSize:12,lineHeight:18},error:{color:'#B42318',lineHeight:21},button:{marginTop:14}});

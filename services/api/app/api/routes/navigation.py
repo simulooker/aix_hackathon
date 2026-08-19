@@ -40,7 +40,7 @@ def _get_route_hazards(
     return (
         db.query(HazardReport)
         .filter(
-            HazardReport.status.in_(["verified", "pending"]),
+            HazardReport.is_active.is_(True),
             HazardReport.severity > 0,
             HazardReport.latitude.between(
                 center_latitude - latitude_delta,

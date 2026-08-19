@@ -90,6 +90,7 @@ export default function MapScreen() {
   const [recenterRequest, setRecenterRequest] = useState(0);
   const [panelHeight, setPanelHeight] = useState(0);
   const [mapViewport, setMapViewport] = useState<MapViewport>();
+  const [mapDataRefreshing, setMapDataRefreshing] = useState(false);
   const mapViewportRef = useRef<MapViewport | undefined>(undefined);
   mapViewportRef.current = mapViewport;
   const locationRef = useRef(coordinates);
@@ -102,6 +103,7 @@ export default function MapScreen() {
     stops: busStops,
     loading: busesLoading,
     error: busError,
+    refresh: refreshBusStops,
   } = useLiveBuses(
     mapViewport?.level != null && mapViewport.level <= 4 ? mapViewport.center : undefined,
     showLiveBuses && mapViewport?.level != null && mapViewport.level <= 4,
@@ -280,6 +282,34 @@ export default function MapScreen() {
       return;
     }
     router.push('/report/camera' as Href);
+  };
+
+  const refreshMapData = async () => {
+    if (mapDataRefreshing) return;
+    setMapDataRefreshing(true);
+    const tasks: Promise<unknown>[] = [];
+    const viewport = mapViewportRef.current;
+    const currentCoordinates = locationRef.current;
+
+    if (showHazards && viewport && viewport.level <= 5) {
+      const radiusM = viewport.level >= 5 ? 1600 : viewport.level === 4 ? 900 : 500;
+      tasks.push(
+        getNearbyHazards({ ...viewport.center, radiusM }).then(setHazards),
+      );
+    }
+    if (currentCoordinates) {
+      tasks.push(
+        getEnvironmentContext({
+          ...currentCoordinates,
+          profile: routeProfile ?? 'general',
+          radiusM: 5000,
+        }).then(setEnvironment),
+      );
+    }
+    if (showLiveBuses) refreshBusStops();
+
+    await Promise.allSettled(tasks);
+    setMapDataRefreshing(false);
   };
 
   if (!locationInitialized) {
@@ -564,6 +594,20 @@ export default function MapScreen() {
               onPress={openReport}>
               <Ionicons name="camera-outline" size={19} color="#167C5A" />
               <Text style={styles.quickActionText}>제보</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="지도 데이터 새로고침"
+              accessibilityState={{ busy: mapDataRefreshing }}
+              style={styles.quickActionButton}
+              disabled={mapDataRefreshing}
+              onPress={() => void refreshMapData()}>
+              {mapDataRefreshing ? (
+                <ActivityIndicator size="small" color="#167C5A" />
+              ) : (
+                <Ionicons name="refresh" size={19} color="#167C5A" />
+              )}
+              <Text style={styles.quickActionText}>새로고침</Text>
             </Pressable>
           </View>
         </View>

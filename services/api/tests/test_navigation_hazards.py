@@ -6,14 +6,14 @@ from app.db.session import Base
 from app.models.report import HazardReport
 
 
-def test_route_uses_verified_and_pending_reports() -> None:
+def test_route_uses_only_active_reports() -> None:
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)
     with Session(engine) as session:
         session.add_all(
             [
                 HazardReport(
-                    status="verified",
+                    is_active=True,
                     latitude=35.16,
                     longitude=126.85,
                     hazard_type="fixed_obstacle",
@@ -21,7 +21,7 @@ def test_route_uses_verified_and_pending_reports() -> None:
                     overall_risk="high",
                 ),
                 HazardReport(
-                    status="pending",
+                    is_active=False,
                     latitude=35.16,
                     longitude=126.85,
                     hazard_type="fixed_obstacle",
@@ -34,5 +34,5 @@ def test_route_uses_verified_and_pending_reports() -> None:
 
         hazards = _get_route_hazards(session, 35.16, 126.85, 0.01, 0.01)
 
-    assert len(hazards) == 2
-    assert {hazard.status for hazard in hazards} == {"verified", "pending"}
+    assert len(hazards) == 1
+    assert hazards[0].is_active is True

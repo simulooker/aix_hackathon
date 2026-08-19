@@ -19,7 +19,9 @@ def test_existing_hazard_report_table_receives_required_columns() -> None:
         column["name"] for column in inspect(engine).get_columns("hazard_reports")
     }
     assert {
-        "status",
+        "is_active",
+        "heading_deg",
+        "heading_accuracy",
         "hazard_type",
         "confidence",
         "severity",

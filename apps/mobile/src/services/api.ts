@@ -152,12 +152,22 @@ export async function analyzePhoto(photoUri: string): Promise<AIAnalysisResponse
   return response.json();
 }
 
-export async function submitReport(params: { photoUri: string; latitude: number; longitude: number }): Promise<ReportResponse> {
+export async function submitReport(params: {
+  photoUri: string;
+  latitude: number;
+  longitude: number;
+  headingDeg?: number;
+  headingAccuracy?: number;
+}): Promise<ReportResponse> {
   const form = new FormData();
   const filename = params.photoUri.split('/').pop() ?? 'photo.jpg';
   form.append('image', { uri: params.photoUri, name: filename, type: 'image/jpeg' } as unknown as Blob);
   form.append('latitude', String(params.latitude));
   form.append('longitude', String(params.longitude));
+  if (params.headingDeg != null) form.append('heading_deg', String(params.headingDeg));
+  if (params.headingAccuracy != null) {
+    form.append('heading_accuracy', String(params.headingAccuracy));
+  }
   const response = await fetch(`${API_BASE_URL}/reports`, {
     method: 'POST',
     body: form,

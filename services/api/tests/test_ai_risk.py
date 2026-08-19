@@ -63,3 +63,12 @@ def test_near_obstacle_leaving_almost_no_space_is_high_risk() -> None:
         )
         == "high"
     )
+
+
+def test_person_never_contributes_to_risk() -> None:
+    assert (
+        AIService._risk(
+            "person", True, blocked=1.0, remaining=0.0, proximity=1.0
+        )
+        == "none"
+    )

@@ -1,24 +1,27 @@
-export type HazardStatus = 'pending' | 'verified' | 'rejected' | 'resolved' | 'not_saved';
 export type RiskLevel = 'none' | 'low' | 'medium' | 'high';
 
 export type HazardReport = {
   id: string;
   latitude: number;
   longitude: number;
+  heading_deg: number | null;
+  heading_accuracy: number | null;
   hazard_type: string | null;
   confidence: number | null;
   severity: number | null;
-  status: HazardStatus;
+  is_active: boolean;
   created_at: string;
   photo_path?: string | null;
 };
 
 export type ReportResponse = {
   report_id: string | null;
-  status: HazardStatus;
+  is_active: boolean;
   filename: string | null;
   latitude: number;
   longitude: number;
+  heading_deg?: number | null;
+  heading_accuracy?: number | null;
   hazard_type?: string | null;
   confidence?: number | null;
   severity?: number | null;
