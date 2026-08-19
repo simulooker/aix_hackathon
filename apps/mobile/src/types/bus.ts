@@ -13,35 +13,3 @@ export type BusRouteSummary = {
   startNodeName?: string;
   endNodeName?: string;
 };
-
-export type BusRouteStop = BusStop & {
-  order: number;
-};
-
-export type BusArrival = {
-  routeId: string;
-  routeNo: string;
-  arrivalMinutes?: number;
-  remainingStops?: number;
-};
-
-export type BusJourneySegment = {
-  routeId: string;
-  routeNo: string;
-  cityCode: number;
-  fromStop: BusRouteStop;
-  toStop: BusRouteStop;
-  stops: BusRouteStop[];
-  stopCount: number;
-  arrivalMinutes?: number;
-};
-
-export type BusJourneyPlan = {
-  boardingStop: BusStop;
-  alightingStop: BusStop;
-  segments: BusJourneySegment[];
-  transferCount: number;
-  walkingDistanceM: number;
-  busDistanceM: number;
-  estimatedMinutes: number;
-};

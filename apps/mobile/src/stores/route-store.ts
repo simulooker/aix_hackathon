@@ -1,54 +1,17 @@
 import { create } from 'zustand';
 
-import { getRouteDisasters, requestRoadRoute, requestRoute } from '@/src/services/api';
-import { planBusJourney } from '@/src/services/bus';
+import { requestRoute } from '@/src/services/api';
 import { usePreferencesStore } from '@/src/stores/preferences-store';
-import type { RoutePoint, RouteResponse, TransitLeg } from '@/src/types/route';
+import type { RoutePoint, RouteResponse } from '@/src/types/route';
 
 type RouteState = {
   route?: RouteResponse;
   loading: boolean;
   error?: string;
   fetchRoute: (origin: RoutePoint, destination: RoutePoint) => Promise<RouteResponse | undefined>;
-  fetchBusRoute: (origin: RoutePoint, destination: RoutePoint) => Promise<RouteResponse | undefined>;
   clear: () => void;
   clearRoute: () => void; // map.tsx와의 완벽한 호환을 위해 추가
 };
-
-function joinGeometry(parts: RoutePoint[][]): RoutePoint[] {
-  const result: RoutePoint[] = [];
-  for (const part of parts) {
-    for (const point of part) {
-      const previous = result[result.length - 1];
-      if (previous && previous.latitude === point.latitude && previous.longitude === point.longitude) continue;
-      result.push(point);
-    }
-  }
-  return result;
-}
-
-async function walkingLeg(
-  origin: RoutePoint,
-  destination: RoutePoint,
-  profile: 'general' | 'elderly' | 'wheelchair',
-): Promise<RouteResponse> {
-  const route = await requestRoute({ origin, destination, profile });
-  if (route.used_fallback_graph || route.geometry.length < 3) {
-    throw new Error('정류장까지 이어지는 실제 보행 경로를 찾지 못했습니다. 출발지나 목적지를 다시 선택해 주세요.');
-  }
-  return route;
-}
-
-function roadWaypoints(points: RoutePoint[], maximum = 25): RoutePoint[] {
-  if (points.length <= maximum) return points;
-  const sampled = Array.from({ length: maximum }, (_, index) => (
-    points[Math.round(index * (points.length - 1) / (maximum - 1))]
-  ));
-  return sampled.filter((point, index) => {
-    const previous = sampled[index - 1];
-    return !previous || previous.latitude !== point.latitude || previous.longitude !== point.longitude;
-  });
-}
 
 export const useRouteStore = create<RouteState>((set) => ({
   loading: false,
@@ -69,82 +32,6 @@ export const useRouteStore = create<RouteState>((set) => ({
       return route;
     } catch (error) {
       const message = error instanceof Error ? error.message : '실제 보행 경로를 찾지 못했습니다.';
-      set({ route: undefined, loading: false, error: message });
-      return undefined;
-    }
-  },
-  fetchBusRoute: async (origin, destination) => {
-    set({ loading: true, error: undefined });
-    try {
-      const profile = usePreferencesStore.getState().routeProfile;
-      if (!profile) {
-        set({ route: undefined, loading: false, error: '설정 → 이용자 유형에서 이용자 유형을 먼저 설정해 주세요.' });
-        return undefined;
-      }
-      const disasters = await getRouteDisasters(origin, destination).catch(() => []);
-      const plan = await planBusJourney(origin, destination, disasters);
-      const firstStop = plan.boardingStop;
-      const lastStop = plan.alightingStop;
-      const [firstWalk, lastWalk, roadLegs] = await Promise.all([
-        walkingLeg(origin, firstStop, profile),
-        walkingLeg(lastStop, destination, profile),
-        Promise.all(plan.segments.map((segment) => requestRoadRoute(roadWaypoints(segment.stops)))),
-      ]);
-      const legs: TransitLeg[] = [
-        {
-          mode: 'walk',
-          fromName: '출발지',
-          toName: firstStop.name,
-          geometry: firstWalk.geometry,
-          distanceM: firstWalk.distance_m,
-        },
-        ...plan.segments.map((segment, index) => ({
-          mode: 'bus' as const,
-          fromName: segment.fromStop.name,
-          toName: segment.toStop.name,
-          geometry: roadLegs[index].geometry,
-          distanceM: roadLegs[index].distance_m,
-          routeNo: segment.routeNo,
-          stopCount: segment.stopCount,
-          arrivalMinutes: segment.arrivalMinutes,
-          transfer: index > 0,
-        })),
-        {
-          mode: 'walk',
-          fromName: lastStop.name,
-          toName: '목적지',
-          geometry: lastWalk.geometry,
-          distanceM: lastWalk.distance_m,
-        },
-      ];
-      const hazardMap = new Map(
-        [...(firstWalk.hazards_on_route ?? []), ...(lastWalk.hazards_on_route ?? [])]
-          .map((hazard) => [hazard.id, hazard]),
-      );
-      const route: RouteResponse = {
-        route_id: `bus-${Date.now()}`,
-        status: 'ok',
-        message: plan.transferCount
-          ? `버스 ${plan.transferCount}회 환승 경로입니다.`
-          : '환승 없는 버스 경로입니다.',
-        geometry: joinGeometry(legs.map((leg) => leg.geometry)),
-        distance_m: Math.round(legs.reduce((total, leg) => total + leg.distanceM, 0)),
-        hazards_avoided: (firstWalk.hazards_avoided ?? 0) + (lastWalk.hazards_avoided ?? 0),
-        hazards_on_route: [...hazardMap.values()],
-        used_fallback_graph: firstWalk.used_fallback_graph || lastWalk.used_fallback_graph,
-        travel_mode: 'bus',
-        transit_legs: legs,
-        ascent_m: (firstWalk.ascent_m ?? 0) + (lastWalk.ascent_m ?? 0),
-        descent_m: (firstWalk.descent_m ?? 0) + (lastWalk.descent_m ?? 0),
-        max_grade_percent: Math.max(firstWalk.max_grade_percent ?? 0, lastWalk.max_grade_percent ?? 0),
-        slope_segments: [...(firstWalk.slope_segments ?? []), ...(lastWalk.slope_segments ?? [])],
-        disaster_zones_avoided: disasters.length,
-        disaster_zones: disasters,
-      };
-      set({ route, loading: false });
-      return route;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : '버스 경로를 찾지 못했습니다.';
       set({ route: undefined, loading: false, error: message });
       return undefined;
     }

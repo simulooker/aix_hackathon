@@ -1,6 +1,6 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { SafeAreaView, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { SafeAreaView, StyleSheet, Switch, Text, View } from 'react-native';
 
 import { KakaoMap } from '@/src/components/KakaoMap';
 import { PrimaryButton } from '@/src/components/PrimaryButton';
@@ -51,7 +51,6 @@ export default function NavigationScreen() {
   const origin = route.geometry[0];
   const destination = route.geometry[route.geometry.length - 1];
   const current = guidance.steps[guidance.stepIndex];
-  const isBusRoute = route.travel_mode === 'bus' && !!route.transit_legs?.length;
   const maxGrade = route.max_grade_percent ?? 0;
   const maxGradeDegrees = Math.atan(maxGrade / 100) * 180 / Math.PI;
   const slopeLevel = maxGrade >= 12.5 ? 'blocked' : maxGrade >= 8.3 ? 'verySteep' : maxGrade >= 5 ? 'steep' : 'moderate';
@@ -66,14 +65,13 @@ export default function NavigationScreen() {
         currentLocation={guidance.currentLocation ?? coordinates ?? origin}
         destination={destination}
         route={route.geometry}
-        transitLegs={route.transit_legs}
         hazards={route.hazards_on_route ?? []}
         disasters={route.disaster_zones ?? []}
       />
       <View style={styles.panel}>
         <View style={styles.headerRow}>
-          <View><Text style={styles.title}>{isBusRoute ? '버스 경로 안내' : '안전 보행 안내'}</Text><Text style={styles.body}>전체 거리 {formatDistance(route.distance_m)}</Text></View>
-          {!isBusRoute && <View style={styles.voiceRow}><MaterialCommunityIcons name={guidance.voiceEnabled ? 'volume-high' : 'volume-off'} size={21} color="#263D35" /><Text style={styles.voiceText}>음성</Text><Switch value={guidance.voiceEnabled} onValueChange={guidance.setVoiceEnabled} trackColor={{ false: '#CBD5D1', true: '#8BC8B1' }} thumbColor={guidance.voiceEnabled ? '#167C5A' : '#FFF'} /></View>}
+          <View><Text style={styles.title}>안전 보행 안내</Text><Text style={styles.body}>전체 거리 {formatDistance(route.distance_m)}</Text></View>
+          <View style={styles.voiceRow}><MaterialCommunityIcons name={guidance.voiceEnabled ? 'volume-high' : 'volume-off'} size={21} color="#263D35" /><Text style={styles.voiceText}>음성</Text><Switch value={guidance.voiceEnabled} onValueChange={guidance.setVoiceEnabled} trackColor={{ false: '#CBD5D1', true: '#8BC8B1' }} thumbColor={guidance.voiceEnabled ? '#167C5A' : '#FFF'} /></View>
         </View>
 
         {maxGrade >= 2 && (
@@ -96,31 +94,7 @@ export default function NavigationScreen() {
           <Text style={styles.disasterNotice}>재난·도로 통제 구간 {route.disaster_zones_avoided}곳을 제외하고 계산했습니다.</Text>
         )}
 
-        {isBusRoute ? (
-          <ScrollView style={styles.itinerary} contentContainerStyle={styles.itineraryContent}>
-            {route.transit_legs?.map((leg, index) => (
-              <View key={`${leg.mode}-${index}-${leg.fromName}`} style={[styles.legCard, leg.mode === 'bus' && styles.busLegCard]}>
-                <View style={[styles.legIcon, leg.mode === 'bus' && styles.busLegIcon]}>
-                  <MaterialCommunityIcons name={leg.mode === 'bus' ? 'bus' : 'walk'} size={23} color={leg.mode === 'bus' ? '#FFFFFF' : '#167C5A'} />
-                </View>
-                <View style={styles.legText}>
-                  {leg.transfer && <Text style={styles.transferText}>여기서 환승</Text>}
-                  <Text style={styles.legTitle}>
-                    {leg.mode === 'bus' ? `${leg.routeNo || ''}번 버스` : `${leg.toName}까지 걷기`}
-                  </Text>
-                  <Text style={styles.legDetail}>
-                    {leg.fromName} → {leg.toName}
-                    {leg.mode === 'bus' ? ` · ${leg.stopCount ?? 0}개 정류장` : ` · ${formatDistance(leg.distanceM)}`}
-                  </Text>
-                  {leg.mode === 'bus' && leg.arrivalMinutes != null && (
-                    <Text style={styles.arrivalText}>현재 기준 약 {leg.arrivalMinutes}분 후 정류장 도착 예정</Text>
-                  )}
-                </View>
-              </View>
-            ))}
-            <Text style={styles.transitSource}>버스 정보: 국토교통부 TAGO · 실제 운행 상황과 다를 수 있습니다.</Text>
-          </ScrollView>
-        ) : !guidance.started ? (
+        {!guidance.started ? (
           <>
             {route.used_fallback_graph && <Text style={styles.warning}>현재 경로는 실제 도로망이 아닌 임시 직선 경로입니다.</Text>}
             <PrimaryButton label="안내 시작" variant="dark" onPress={() => void guidance.startGuidance()} />
@@ -154,11 +128,4 @@ const styles = StyleSheet.create({
   slopeNoticeBlocked: { backgroundColor: '#F5F5F4', borderColor: '#78716C' },
   slopeTextWrap: { flex: 1 }, slopeTitle: { color: '#6B4F00', fontSize: 13, fontWeight: '900' }, slopeTitleSteep: { color: '#9A4600' }, slopeTitleDanger: { color: '#B42318' }, slopeTitleBlocked: { color: '#292524' }, slopeBody: { marginTop: 2, color: '#6F6651', fontSize: 10, lineHeight: 14 },
   disasterNotice: { padding: 9, borderRadius: 10, color: '#B42318', backgroundColor: '#FFF1F0', fontSize: 12, fontWeight: '800' },
-  itinerary: { maxHeight: 300 }, itineraryContent: { gap: 8, paddingBottom: 5 },
-  legCard: { flexDirection: 'row', alignItems: 'center', gap: 11, padding: 11, borderRadius: 14, backgroundColor: '#F0F7F4', borderWidth: 1, borderColor: '#D6E7E0' },
-  busLegCard: { backgroundColor: '#EEF5FF', borderColor: '#C5DAF5' },
-  legIcon: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', backgroundColor: '#E0F1EA' },
-  busLegIcon: { backgroundColor: '#1F6FEB' }, legText: { flex: 1 }, legTitle: { color: '#14251F', fontSize: 15, fontWeight: '900' }, legDetail: { marginTop: 3, color: '#596A64', fontSize: 12, lineHeight: 17 },
-  transferText: { marginBottom: 2, color: '#1F6FEB', fontSize: 11, fontWeight: '900' }, arrivalText: { marginTop: 4, color: '#1F6FEB', fontSize: 12, fontWeight: '800' },
-  transitSource: { marginTop: 2, color: '#71817B', fontSize: 9, textAlign: 'center' },
 });

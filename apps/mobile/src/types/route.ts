@@ -13,18 +13,6 @@ export type SlopeSegment = {
   level: 'moderate' | 'steep' | 'very_steep' | 'blocked';
 };
 
-export type TransitLeg = {
-  mode: 'walk' | 'bus';
-  fromName: string;
-  toName: string;
-  geometry: RoutePoint[];
-  distanceM: number;
-  routeNo?: string;
-  stopCount?: number;
-  arrivalMinutes?: number;
-  transfer?: boolean;
-};
-
 export type RouteResponse = {
   route_id: string;
   status: string;
@@ -34,8 +22,6 @@ export type RouteResponse = {
   hazards_avoided: number;
   hazards_on_route: HazardReport[];
   used_fallback_graph: boolean;
-  travel_mode?: 'walk' | 'bus';
-  transit_legs?: TransitLeg[];
   ascent_m?: number;
   descent_m?: number;
   max_grade_percent?: number;

@@ -33,6 +33,8 @@ import type { HazardReport } from '@/src/types/hazard';
 import type { RoutePoint } from '@/src/types/route';
 
 const EMPTY_STOPS: BusStop[] = [];
+// 버스정류장 표시 기능은 추후 다시 사용할 수 있도록 구현은 보존하고 현재 UI에서만 끕니다.
+const BUS_STOP_DISPLAY_ENABLED = false;
 
 const HAZARD_LABELS: Record<string, string> = {
   person: '보행자',
@@ -67,7 +69,6 @@ export default function MapScreen() {
   const {
     route,
     fetchRoute,
-    fetchBusRoute,
     clearRoute,
     loading: routeLoading,
     error: routeError,
@@ -76,7 +77,6 @@ export default function MapScreen() {
   const [hazards, setHazards] = useState<HazardReport[]>([]);
   const [selectedHazard, setSelectedHazard] = useState<HazardReport | null>(null);
   const [environment, setEnvironment] = useState<EnvironmentContext>();
-  const [travelMode, setTravelMode] = useState<'walk' | 'bus'>('walk');
   const [origin, setOrigin] = useState<RoutePoint>();
   const [originName, setOriginName] = useState('현재 위치');
   const [destination, setDestination] = useState<RoutePoint>();
@@ -99,6 +99,7 @@ export default function MapScreen() {
 
   const profilePromptShown = useRef(false);
   const busErrorShown = useRef(false);
+  const busStopsEnabled = BUS_STOP_DISPLAY_ENABLED && showLiveBuses;
 
   const {
     stops: busStops,
@@ -107,10 +108,10 @@ export default function MapScreen() {
     refresh: refreshBusStops,
   } = useLiveBuses(
     mapViewport?.level != null && mapViewport.level <= 4 ? mapViewport.center : undefined,
-    showLiveBuses && mapViewport?.level != null && mapViewport.level <= 4,
+    busStopsEnabled && mapViewport?.level != null && mapViewport.level <= 4,
   );
 
-  const visibleBusStops = useMemo(() => (showLiveBuses ? busStops : EMPTY_STOPS), [busStops, showLiveBuses]);
+  const visibleBusStops = useMemo(() => (busStopsEnabled ? busStops : EMPTY_STOPS), [busStops, busStopsEnabled]);
 
   useFocusEffect(
     useCallback(() => {
@@ -178,7 +179,7 @@ export default function MapScreen() {
   }, [preferencesInitialized, routeProfile, router]);
 
   useEffect(() => {
-    if (!showLiveBuses) return;
+    if (!busStopsEnabled) return;
     if (!busError || busErrorShown.current) return;
 
     busErrorShown.current = true;
@@ -189,7 +190,7 @@ export default function MapScreen() {
         ? '공공데이터 서버가 현재 앱의 키를 버스정류소정보용으로 인정하지 않았습니다. TAGO 버스정류소정보 승인 여부와 EAS에 등록한 키를 확인해 주세요.'
         : busError,
     );
-  }, [busError, setShowLiveBuses, showLiveBuses]);
+  }, [busError, busStopsEnabled, setShowLiveBuses]);
 
   const chooseDestination = (point: RoutePoint, label?: string) => {
     Keyboard.dismiss();
@@ -242,9 +243,7 @@ export default function MapScreen() {
       ]);
       return;
     }
-    const result = travelMode === 'bus'
-      ? await fetchBusRoute(routeOrigin, destination)
-      : await fetchRoute(routeOrigin, destination);
+    const result = await fetchRoute(routeOrigin, destination);
     if (result?.geometry.length) {
       router.push(`/navigation/${result.route_id}` as Href);
     } else {
@@ -307,7 +306,7 @@ export default function MapScreen() {
         }).then(setEnvironment),
       );
     }
-    if (showLiveBuses) refreshBusStops();
+    if (busStopsEnabled) refreshBusStops();
 
     await Promise.allSettled(tasks);
     setMapDataRefreshing(false);
@@ -343,7 +342,6 @@ export default function MapScreen() {
         hazards={showHazards ? hazards : []}
         disasters={environment?.disasters ?? []}
         route={route?.geometry}
-        transitLegs={route?.transit_legs}
         busStops={visibleBusStops}
         onHazardPress={(hazard) => setSelectedHazard(hazard)}
         onViewportChange={setMapViewport}
@@ -551,28 +549,30 @@ export default function MapScreen() {
         </Pressable>
       </Modal>
 
-      <View
-        style={[styles.busToggleWrap, { bottom: insets.bottom + 12 + panelHeight + 12 }]}
-        pointerEvents="box-none">
-        <Pressable
-          accessibilityRole="switch"
-          accessibilityState={{ checked: showLiveBuses }}
-          accessibilityLabel={showLiveBuses ? '버스정류장 표시 끄기' : '버스정류장 표시 켜기'}
-          style={[styles.busToggle, showLiveBuses && styles.busToggleOn]}
-          onPress={() => {
-            if (!showLiveBuses) busErrorShown.current = false;
-            setShowLiveBuses(!showLiveBuses);
-          }}>
-          {showLiveBuses && busesLoading ? (
-            <ActivityIndicator size="small" color="#FFFFFF" />
-          ) : (
-            <Ionicons name="bus" size={22} color={showLiveBuses ? '#FFFFFF' : '#40534C'} />
-          )}
-          <Text style={[styles.busToggleText, showLiveBuses && styles.busToggleTextOn]}>
-            버스정류장 표시
-          </Text>
-        </Pressable>
-      </View>
+      {BUS_STOP_DISPLAY_ENABLED && (
+        <View
+          style={[styles.busToggleWrap, { bottom: insets.bottom + 12 + panelHeight + 12 }]}
+          pointerEvents="box-none">
+          <Pressable
+            accessibilityRole="switch"
+            accessibilityState={{ checked: showLiveBuses }}
+            accessibilityLabel={showLiveBuses ? '버스정류장 표시 끄기' : '버스정류장 표시 켜기'}
+            style={[styles.busToggle, showLiveBuses && styles.busToggleOn]}
+            onPress={() => {
+              if (!showLiveBuses) busErrorShown.current = false;
+              setShowLiveBuses(!showLiveBuses);
+            }}>
+            {showLiveBuses && busesLoading ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Ionicons name="bus" size={22} color={showLiveBuses ? '#FFFFFF' : '#40534C'} />
+            )}
+            <Text style={[styles.busToggleText, showLiveBuses && styles.busToggleTextOn]}>
+              버스정류장 표시
+            </Text>
+          </Pressable>
+        </View>
+      )}
 
       <View
         style={[styles.panel, { bottom: insets.bottom + 12 }]}
@@ -618,26 +618,10 @@ export default function MapScreen() {
           <Text style={styles.selectedPlaceText} numberOfLines={1}>출발 · {originName}</Text>
           <Text style={styles.selectedPlaceText} numberOfLines={1}>도착 · {destination ? destinationName || '지도에서 선택한 위치' : '선택하지 않음'}</Text>
         </View>
-        <View style={styles.travelModeRow}>
-          <Pressable
-            accessibilityRole="button"
-            style={[styles.travelModeButton, travelMode === 'walk' && styles.travelModeButtonActive]}
-            onPress={() => setTravelMode('walk')}>
-            <Ionicons name="walk" size={20} color={travelMode === 'walk' ? '#FFFFFF' : '#40534C'} />
-            <Text style={[styles.travelModeText, travelMode === 'walk' && styles.travelModeTextActive]}>걸어가기</Text>
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            style={[styles.travelModeButton, travelMode === 'bus' && styles.busModeButtonActive]}
-            onPress={() => setTravelMode('bus')}>
-            <Ionicons name="bus" size={20} color={travelMode === 'bus' ? '#FFFFFF' : '#40534C'} />
-            <Text style={[styles.travelModeText, travelMode === 'bus' && styles.travelModeTextActive]}>버스 이용</Text>
-          </Pressable>
-        </View>
         {error && <Text style={styles.error}>{error}</Text>}
         {routeError && <Text style={styles.error}>{routeError}</Text>}
         <PrimaryButton
-          label={destination ? (travelMode === 'bus' ? '버스 경로 찾기' : '안전 보행 경로 찾기') : '목적지를 먼저 입력해 주세요'}
+          label={destination ? '안전 보행 경로 찾기' : '목적지를 먼저 입력해 주세요'}
           onPress={() => void findRoute()}
           disabled={!destination || !(origin ?? coordinates)}
           loading={routeLoading}
@@ -776,12 +760,6 @@ const styles = StyleSheet.create({
   info: { color: '#52645E', fontSize: 12 },
   selectedPlaces: { gap: 3, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 11, backgroundColor: '#F2F7F4' },
   selectedPlaceText: { color: '#40534C', fontSize: 12, fontWeight: '700' },
-  travelModeRow: { flexDirection: 'row', gap: 8 },
-  travelModeButton: { flex: 1, minHeight: 43, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderRadius: 12, borderWidth: 1, borderColor: '#CCDAD4', backgroundColor: '#F7FAF8' },
-  travelModeButtonActive: { borderColor: '#167C5A', backgroundColor: '#167C5A' },
-  busModeButtonActive: { borderColor: '#1F6FEB', backgroundColor: '#1F6FEB' },
-  travelModeText: { color: '#40534C', fontSize: 13, fontWeight: '800' },
-  travelModeTextActive: { color: '#FFFFFF' },
   error: { color: '#B42318', fontSize: 12 },
 
   /* ⚠️ 위험 모달 전용 스타일 */

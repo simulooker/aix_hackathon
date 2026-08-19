@@ -5,7 +5,7 @@ import WebView, { WebViewMessageEvent } from 'react-native-webview';
 import type { BusStop } from '@/src/types/bus';
 import type { DisasterZone } from '@/src/types/environment';
 import type { HazardReport } from '@/src/types/hazard';
-import type { RoutePoint, TransitLeg } from '@/src/types/route';
+import type { RoutePoint } from '@/src/types/route';
 
 type KakaoMapProps = {
   center: RoutePoint;
@@ -15,7 +15,6 @@ type KakaoMapProps = {
   hazards?: HazardReport[];
   disasters?: DisasterZone[];
   route?: RoutePoint[];
-  transitLegs?: TransitLeg[];
   busStops?: BusStop[];
   onMapPress?: (point: RoutePoint) => void;
   onViewportChange?: (viewport: MapViewport) => void;
@@ -52,7 +51,6 @@ export function KakaoMap({
   hazards = [],
   disasters = [],
   route = [],
-  transitLegs = [],
   busStops = [],
   onMapPress,
   onViewportChange,
@@ -135,7 +133,6 @@ export function KakaoMap({
       destination,
       disasters,
       route,
-      transitLegs,
       searchRequest,
     }).replace(/</g, '\\u003c');
     const safeKey = apiKey.replace(/[&<>"']/g, '');
@@ -453,20 +450,7 @@ export function KakaoMap({
         if (data.route.length > 1) {
           document.getElementById('slope-legend').style.display = 'flex';
           const path = data.route.map(function (point) { return new kakao.maps.LatLng(point.latitude, point.longitude); });
-          if (data.transitLegs && data.transitLegs.length) {
-            data.transitLegs.forEach(function (leg) {
-              const geometry = leg.geometry || [];
-              if (geometry.length < 2) return;
-              if (leg.mode === 'walk') {
-                drawSlopeRoute(geometry, 'shortdot');
-              } else {
-                const legPath = geometry.map(function (point) { return new kakao.maps.LatLng(point.latitude, point.longitude); });
-                new kakao.maps.Polyline({ map: map, path: legPath, strokeWeight: 7, strokeColor: '#1F6FEB', strokeOpacity: 0.92 });
-              }
-            });
-          } else {
-            drawSlopeRoute(data.route, 'solid');
-          }
+          drawSlopeRoute(data.route, 'solid');
           const bounds = new kakao.maps.LatLngBounds();
           path.forEach(function (point) { bounds.extend(point); });
           map.setBounds(bounds, 40, 40, 40, 40);
@@ -583,7 +567,7 @@ export function KakaoMap({
   </script>
 </body>
 </html>`;
-  }, [apiKey, center, origin, destination, disasters, route, transitLegs, searchRequest]);
+  }, [apiKey, center, origin, destination, disasters, route, searchRequest]);
 
   const handleMessage = (event: WebViewMessageEvent) => {
     try {
