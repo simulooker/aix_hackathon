@@ -19,6 +19,7 @@ class ReportResponse(BaseModel):
     severity: float = 0
     overall_risk: str = "none"
     photo_path: str | None = None
+    is_active: bool = True
     model_ready: bool
     walkway_detected: bool
     obstacles_detected: int
@@ -38,3 +39,4 @@ class NearbyReport(BaseModel):
     status: str
     created_at: datetime
     photo_path: str | None = None
+    is_active: bool = True

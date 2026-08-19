@@ -81,6 +81,7 @@ async def create_report(
             severity=0,
             overall_risk="none",
             photo_path=None,
+            is_active=True,
             model_ready=analysis["model_ready"],
             walkway_detected=analysis["walkway_detected"],
             obstacles_detected=analysis["obstacles_detected"],
@@ -112,6 +113,7 @@ async def create_report(
         detected_labels=",".join(labels) or None,
         photo_path=photo_path,
         status="verified",
+        is_active=True,
     )
     db.add(report)
     db.commit()
@@ -127,6 +129,7 @@ async def create_report(
         severity=report.severity,
         overall_risk=report.overall_risk,
         photo_path=report.photo_path,
+        is_active=report.is_active,
         model_ready=analysis["model_ready"],
         walkway_detected=analysis["walkway_detected"],
         obstacles_detected=analysis["obstacles_detected"],
@@ -149,6 +152,7 @@ def get_nearby_reports(
         .filter(
             HazardReport.status.in_(["verified", "pending"]),
             HazardReport.severity > 0,
+            HazardReport.is_active.is_(True),
             HazardReport.latitude.between(lat - latitude_delta, lat + latitude_delta),
             HazardReport.longitude.between(
                 lon - longitude_delta, lon + longitude_delta
