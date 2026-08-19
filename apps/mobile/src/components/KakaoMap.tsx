@@ -379,11 +379,10 @@ export function KakaoMap({
         marker(data.origin, '출발지');
         marker(data.destination, '목적지');
 
+        // 재난 통제 구역 표식 (파선 원 + 삼각 경고 오버레이)
         data.disasters.forEach(function (disaster) {
           const position = new kakao.maps.LatLng(disaster.latitude, disaster.longitude);
           const color = disaster.kind === 'landslide' ? '#7A271A' : '#B42318';
-          // 통제 범위는 파선 원으로만 옅게 깔고, 표식은 삼각 경고 아이콘으로 세운다.
-          // (제보 위험은 원형 점이므로 재난과 형태가 겹치지 않게 구분한다.)
           new kakao.maps.Circle({
             map: map,
             center: position,
@@ -471,13 +470,28 @@ export function KakaoMap({
           }
         }
 
-        if (data.route.length > 1) {
+        // 경로 렌더링 및 바다 튕김 방지 setBounds 로직
+        if (data.route && data.route.length > 1) {
           document.getElementById('slope-legend').style.display = 'flex';
-          const path = data.route.map(function (point) { return new kakao.maps.LatLng(point.latitude, point.longitude); });
           drawSlopeRoute(data.route, 'solid');
-          const bounds = new kakao.maps.LatLngBounds();
-          path.forEach(function (point) { bounds.extend(point); });
-          map.setBounds(bounds, 40, 40, 40, 40);
+
+          var bounds = new kakao.maps.LatLngBounds();
+          var validCount = 0;
+
+          data.route.forEach(function (point) {
+            var lat = Number(point.latitude);
+            var lng = Number(point.longitude);
+            if (lat >= 33.0 && lat <= 39.0 && lng >= 124.0 && lng <= 132.0) {
+              bounds.extend(new kakao.maps.LatLng(lat, lng));
+              validCount++;
+            }
+          });
+
+          if (validCount > 1) {
+            setTimeout(function () {
+              map.setBounds(bounds);
+            }, 150);
+          }
         }
 
         let suppressMapClickUntil = 0;
