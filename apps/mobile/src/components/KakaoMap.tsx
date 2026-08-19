@@ -66,7 +66,6 @@ export function KakaoMap({
   const [mapError, setMapError] = useState<string>();
   const webViewRef = useRef<WebView>(null);
 
-  // 데이터 변경 시 웹뷰 전체 리로드를 막고 자바스크립트 주입으로 부드럽게 갱신
   const busPayloadRef = useRef({ stops: busStops });
   busPayloadRef.current = { stops: busStops };
   const hazardPayloadRef = useRef(hazards);
@@ -152,8 +151,10 @@ export function KakaoMap({
     .bus-stop{width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:9px;
       background:#fff;border:2px solid #1f6feb;box-shadow:0 2px 5px rgba(0,0,0,.3);cursor:pointer;font-size:17px;line-height:1}
     .bus-tip{padding:5px 8px;font:12px sans-serif;white-space:nowrap}
-    .hazard-marker{width:16px;height:16px;padding:0;border:2px solid #fff;border-radius:50%;
-      box-shadow:0 2px 5px rgba(0,0,0,.35);cursor:pointer;display:block}
+    .hazard-touch-box{width:56px;height:56px;display:flex;align-items:center;justify-content:center;
+      background:transparent;cursor:pointer;-webkit-tap-highlight-color:transparent}
+    .hazard-marker{width:22px;height:22px;padding:0;border:3px solid #ffffff;border-radius:50%;
+      box-shadow:0 2px 7px rgba(0,0,0,.45);pointer-events:none;box-sizing:border-box}
     .disaster-pin{max-width:170px;padding:5px 9px;border:2px solid #fff;border-radius:13px;background:#b42318;color:#fff;
       box-shadow:0 2px 7px rgba(0,0,0,.32);font:800 11px/1.25 -apple-system,BlinkMacSystemFont,sans-serif;text-align:center}
     #slope-legend{position:fixed;top:12px;left:12px;z-index:20;display:none;flex-direction:column;gap:4px;
@@ -173,7 +174,7 @@ export function KakaoMap({
   <script>
     const data = ${data};
     const status = document.getElementById('status');
-    let isOverlayClick = false;
+    let hazardClickLock = false;
 
     function send(type, payload) {
       window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({ type, ...payload }));
@@ -209,11 +210,20 @@ export function KakaoMap({
             const element = document.createElement('div');
             element.className = 'bus-stop';
             element.textContent = '🚌';
-            element.addEventListener('click', function (e) {
-              isOverlayClick = true;
+            
+            function handleStopSelect(e) {
+              if (e) {
+                e.stopPropagation();
+                if (e.preventDefault) e.preventDefault();
+              }
+              hazardClickLock = true;
               openTip(position, escapeHtml(stop.name));
-              setTimeout(function() { isOverlayClick = false; }, 200);
-            });
+              setTimeout(function() { hazardClickLock = false; }, 500);
+            }
+
+            element.addEventListener('click', handleStopSelect);
+            element.addEventListener('touchend', handleStopSelect);
+
             return new kakao.maps.CustomOverlay({
               map: map.getLevel() <= 4 ? map : null, position: position, content: element,
               xAnchor: 0.5, yAnchor: 0.5, zIndex: 3, clickable: true
@@ -237,38 +247,52 @@ export function KakaoMap({
             if (!hazard || !hazard.id) return;
             seen[hazard.id] = true;
             const severity = Number(hazard.severity || 0);
-            const color = severity >= 0.7 ? '#D92D20' : severity >= 0.4 ? '#F79009' : '#FFE58F';
+            const color = severity >= 0.7 ? '#D92D20' : severity >= 0.4 ? '#F79009' : '#FDB022';
             const position = new kakao.maps.LatLng(hazard.latitude, hazard.longitude);
             const existing = overlays[hazard.id];
+            
             if (existing) {
               existing.overlay.setPosition(position);
-              existing.element.style.background = color;
+              existing.dot.style.background = color;
               return;
             }
-            const element = document.createElement('button');
-            element.type = 'button';
-            element.className = 'hazard-marker';
-            element.title = '위험 제보 보기';
-            element.style.background = color;
-            element.addEventListener('click', function (event) {
-              isOverlayClick = true;
-              event.stopPropagation();
+            
+            const touchBox = document.createElement('div');
+            touchBox.className = 'hazard-touch-box';
+            
+            const dot = document.createElement('div');
+            dot.className = 'hazard-marker';
+            dot.style.background = color;
+            touchBox.appendChild(dot);
+
+            function handleHazardSelect(event) {
+              if (event) {
+                event.stopPropagation();
+                if (event.preventDefault) event.preventDefault();
+              }
+              hazardClickLock = true;
               send('hazardPress', { hazardId: hazard.id });
-              setTimeout(function() { isOverlayClick = false; }, 200);
-            });
+              setTimeout(function() { hazardClickLock = false; }, 500);
+            }
+
+            touchBox.addEventListener('click', handleHazardSelect);
+            touchBox.addEventListener('touchend', handleHazardSelect);
+
             overlays[hazard.id] = {
-              element: element,
+              touchBox: touchBox,
+              dot: dot,
               overlay: new kakao.maps.CustomOverlay({
-                map: map.getLevel() <= 5 ? map : null,
+                map: map,
                 position: position,
-                content: element,
+                content: touchBox,
                 xAnchor: 0.5,
                 yAnchor: 0.5,
-                zIndex: 6,
+                zIndex: 35,
                 clickable: true
               })
             };
           });
+
           Object.keys(overlays).forEach(function (hazardId) {
             if (seen[hazardId]) return;
             overlays[hazardId].overlay.setMap(null);
@@ -276,9 +300,8 @@ export function KakaoMap({
           });
         },
         refreshVisibility: function () {
-          const visible = map.getLevel() <= 5;
           Object.keys(overlays).forEach(function (hazardId) {
-            overlays[hazardId].overlay.setMap(visible ? map : null);
+            overlays[hazardId].overlay.setMap(map);
           });
         }
       };
@@ -302,14 +325,23 @@ export function KakaoMap({
       wrapper.appendChild(label);
       wrapper.appendChild(content);
       const overlay = new kakao.maps.CustomOverlay({ content: wrapper, map: null, zIndex: 10, yAnchor: 0.72, xAnchor: 0.5 });
-      content.addEventListener('click', function () {
+      
+      const handleLocationClick = function (e) {
         if (!position) return;
-        isOverlayClick = true;
+        if (e) {
+          e.stopPropagation();
+          if (e.preventDefault) e.preventDefault();
+        }
+        hazardClickLock = true;
         const info = new kakao.maps.InfoWindow({ content: '<div style="padding:5px 8px;white-space:nowrap;font-size:12px">현재 위치</div>' });
         info.setPosition(position);
         info.open(map);
-        setTimeout(function() { isOverlayClick = false; }, 200);
-      });
+        setTimeout(function() { hazardClickLock = false; }, 500);
+      };
+
+      content.addEventListener('click', handleLocationClick);
+      content.addEventListener('touchend', handleLocationClick);
+
       return {
         setLocation: function (latitude, longitude) {
           position = new kakao.maps.LatLng(latitude, longitude);
@@ -438,7 +470,7 @@ export function KakaoMap({
         }
 
         kakao.maps.event.addListener(map, 'click', function (event) {
-          if (isOverlayClick) return;
+          if (hazardClickLock) return;
           const point = event.latLng;
           send('press', { latitude: point.getLat(), longitude: point.getLng() });
         });
