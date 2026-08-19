@@ -13,7 +13,12 @@ class HazardReport(Base):
     id: Mapped[UUID] = mapped_column(
         Uuid(as_uuid=True), primary_key=True, default=uuid4
     )
-    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True
+    )
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="verified"
+    )
     latitude: Mapped[float] = mapped_column(Float, nullable=False, index=True)
     longitude: Mapped[float] = mapped_column(Float, nullable=False, index=True)
     heading_deg: Mapped[float | None] = mapped_column(Float, nullable=True)

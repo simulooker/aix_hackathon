@@ -31,6 +31,7 @@ TRANSIENT_HAZARD_LABELS = {"motor_vehicle", "two_wheeler"}
 REPORT_CONFIRMATION_RADIUS_M = 5.0
 REPORT_CONFIRMATION_DIRECTION_DEGREES = 30.0
 MINIMUM_HEADING_ACCURACY = 2
+
 DatabaseSession = Annotated[Session, Depends(get_db)]
 AuthenticatedUser = Annotated[User, Depends(get_current_user)]
 
@@ -146,6 +147,7 @@ async def create_report(
     if not has_reportable_hazard:
         return ReportResponse(
             report_id=None,
+            status="not_saved",
             is_active=False,
             filename=image.filename,
             latitude=latitude,
@@ -196,6 +198,7 @@ async def create_report(
         else []
     )
     is_active = not requires_confirmation or bool(matching_reports)
+    
     report = HazardReport(
         latitude=latitude,
         longitude=longitude,
@@ -209,6 +212,7 @@ async def create_report(
         overall_risk=analysis["overall_risk"],
         detected_labels=",".join(labels) or None,
         photo_path=photo_path,
+        status="verified",
         is_active=is_active,
     )
     db.add(report)
@@ -219,6 +223,7 @@ async def create_report(
     db.refresh(report)
     return ReportResponse(
         report_id=report.id,
+        status=report.status,
         is_active=report.is_active,
         filename=image.filename,
         latitude=report.latitude,
@@ -250,6 +255,7 @@ def get_nearby_reports(
     return (
         db.query(HazardReport)
         .filter(
+            HazardReport.status.in_(["verified", "pending"]),
             HazardReport.is_active.is_(True),
             HazardReport.severity > 0,
             HazardReport.latitude.between(lat - latitude_delta, lat + latitude_delta),

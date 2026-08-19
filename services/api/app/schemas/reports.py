@@ -10,15 +10,16 @@ class ReportResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     report_id: UUID | None = None
-    is_active: bool = False
-    filename: str | None
+    status: str = "verified"
+    is_active: bool = True
+    filename: str | None = None
     latitude: float
     longitude: float
     heading_deg: float | None = None
     heading_accuracy: int | None = None
     hazard_type: str | None = None
     confidence: float | None = None
-    severity: float = 0
+    severity: float = 0.0
     overall_risk: str = "none"
     photo_path: str | None = None
     model_ready: bool
@@ -32,13 +33,14 @@ class NearbyReport(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
+    status: str = "verified"
+    is_active: bool = True
     latitude: float
     longitude: float
-    heading_deg: float | None
-    heading_accuracy: int | None
-    hazard_type: str | None
-    confidence: float | None
+    heading_deg: float | None = None
+    heading_accuracy: int | None = None
+    hazard_type: str | None = None
+    confidence: float | None = None
     severity: float
-    is_active: bool
     created_at: datetime
     photo_path: str | None = None
