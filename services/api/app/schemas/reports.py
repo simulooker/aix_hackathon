@@ -11,6 +11,7 @@ class ReportResponse(BaseModel):
 
     report_id: UUID | None = None
     status: str
+    report_message: str | None = None
     filename: str | None
     latitude: float
     longitude: float

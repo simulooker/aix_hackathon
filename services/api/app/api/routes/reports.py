@@ -14,6 +14,7 @@ from fastapi import (
     status,
 )
 from fastapi.responses import Response
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
@@ -27,6 +28,10 @@ from app.services.storage_service import download_report_image, upload_report_im
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 RISK_SEVERITY = {"none": 0.0, "low": 0.25, "medium": 0.6, "high": 1.0}
+SINGLE_PHOTO_TRANSIENT_LABELS = frozenset(
+    {"person", "motor_vehicle", "two_wheeler", "mobility_aid"}
+)
+DEMO_DISASTER_TAG = "TEST_DATA:GWANGJU_CITY_HALL_DISASTER:"
 DatabaseSession = Annotated[Session, Depends(get_db)]
 AuthenticatedUser = Annotated[User, Depends(get_current_user)]
 
@@ -63,28 +68,42 @@ async def create_report(
     except AIModelUnavailable as exc:
         raise HTTPException(503, str(exc)) from exc
 
-    on_walkway = [item for item in analysis["detections"] if item["on_walkway"]]
+    on_walkway = [
+        item
+        for item in analysis["detections"]
+        if item["on_walkway"] and item["risk"] != "none"
+    ]
+    # 한 장의 사진만으로는 사람·차량·자전거가 정지해 있는지 확인할 수 없다.
+    # 따라서 일시적일 수 있는 객체는 분석 결과에는 보여 주되 공용 위험지도에는 저장하지 않는다.
+    reportable_on_walkway = [
+        item for item in on_walkway if item["label"] not in SINGLE_PHOTO_TRANSIENT_LABELS
+    ]
     has_reportable_hazard = (
         analysis["walkway_detected"]
-        and analysis["overall_risk"] != "none"
-        and bool(on_walkway)
+        and bool(reportable_on_walkway)
     )
     if not has_reportable_hazard:
+        transient_only = bool(on_walkway) and not reportable_on_walkway
         return ReportResponse(
             report_id=None,
             status="not_saved",
+            report_message=(
+                "사람·차량·자전거처럼 일시적일 수 있는 대상만 감지되어 위험지도에는 저장하지 않았습니다."
+                if transient_only
+                else "보행을 방해하는 지속성 위험요소가 없어 사진과 위치를 저장하지 않았습니다."
+            ),
             filename=image.filename,
             latitude=latitude,
             longitude=longitude,
             hazard_type=None,
             confidence=None,
             severity=0,
-            overall_risk="none",
+            overall_risk=analysis["overall_risk"] if transient_only else "none",
             photo_path=None,
             model_ready=analysis["model_ready"],
             walkway_detected=analysis["walkway_detected"],
             obstacles_detected=analysis["obstacles_detected"],
-            obstacles_on_walkway=0,
+            obstacles_on_walkway=len(on_walkway),
             detections=analysis["detections"],
         )
 
@@ -99,19 +118,24 @@ async def create_report(
         ) from exc
 
     most_serious = max(
-        on_walkway, key=lambda item: RISK_SEVERITY[item["risk"]], default=None
+        reportable_on_walkway,
+        key=lambda item: RISK_SEVERITY[item["risk"]],
+        default=None,
     )
-    labels = sorted({item["label"] for item in on_walkway})
+    labels = sorted({item["label"] for item in reportable_on_walkway})
+    report_risk = most_serious["risk"] if most_serious else "none"
     report = HazardReport(
         latitude=latitude,
         longitude=longitude,
         hazard_type=most_serious["label"],
-        confidence=max((item["confidence"] for item in on_walkway), default=None),
-        severity=RISK_SEVERITY[analysis["overall_risk"]],
-        overall_risk=analysis["overall_risk"],
+        confidence=max(
+            (item["confidence"] for item in reportable_on_walkway), default=None
+        ),
+        severity=RISK_SEVERITY[report_risk],
+        overall_risk=report_risk,
         detected_labels=",".join(labels) or None,
         photo_path=photo_path,
-        status="verified",
+        status="pending",
     )
     db.add(report)
     db.commit()
@@ -119,6 +143,7 @@ async def create_report(
     return ReportResponse(
         report_id=report.id,
         status=report.status,
+        report_message="검증 대기 중인 제보입니다. 다른 사용자가 확인하기 전에는 경로 계산에 반영되지 않습니다.",
         filename=image.filename,
         latitude=report.latitude,
         longitude=report.longitude,
@@ -149,6 +174,10 @@ def get_nearby_reports(
         .filter(
             HazardReport.status.in_(["verified", "pending"]),
             HazardReport.severity > 0,
+            or_(
+                HazardReport.detected_labels.is_(None),
+                ~HazardReport.detected_labels.like(f"{DEMO_DISASTER_TAG}%"),
+            ),
             HazardReport.latitude.between(lat - latitude_delta, lat + latitude_delta),
             HazardReport.longitude.between(
                 lon - longitude_delta, lon + longitude_delta

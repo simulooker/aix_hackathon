@@ -5,6 +5,7 @@ from typing import Annotated
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import or_
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
@@ -18,6 +19,10 @@ from app.schemas.navigation import (
     RouteResponse,
 )
 from app.services.environment_service import fetch_disaster_zones, route_bbox
+from app.services.seeded_disaster_service import (
+    DEMO_DISASTER_TAG,
+    get_seeded_disaster_zones,
+)
 from app.services.route_service import (
     calculate_road_route,
     calculate_walking_route,
@@ -27,6 +32,37 @@ from app.services.route_service import (
 router = APIRouter(prefix="/routes", tags=["routes"])
 logger = logging.getLogger(__name__)
 DatabaseSession = Annotated[Session, Depends(get_db)]
+
+
+def _get_route_hazards(
+    db: Session,
+    center_latitude: float,
+    center_longitude: float,
+    latitude_delta: float,
+    longitude_delta: float,
+) -> list[HazardReport]:
+    """검증이 끝난 일반 위험 제보만 경로 점수 계산에 사용한다."""
+    return (
+        db.query(HazardReport)
+        .filter(
+            HazardReport.status == "verified",
+            HazardReport.severity > 0,
+            or_(
+                HazardReport.detected_labels.is_(None),
+                ~HazardReport.detected_labels.like(f"{DEMO_DISASTER_TAG}%"),
+            ),
+            HazardReport.latitude.between(
+                center_latitude - latitude_delta,
+                center_latitude + latitude_delta,
+            ),
+            HazardReport.longitude.between(
+                center_longitude - longitude_delta,
+                center_longitude + longitude_delta,
+            ),
+        )
+        .limit(500)
+        .all()
+    )
 
 
 @router.post("/road", response_model=RoadRouteResponse)
@@ -67,22 +103,12 @@ async def create_route(payload: RouteRequest, db: DatabaseSession) -> RouteRespo
             1, 111_320 * cos(radians(center_latitude))
         )
         try:
-            hazards = (
-                db.query(HazardReport)
-                .filter(
-                    HazardReport.status.in_(["verified", "pending"]),
-                    HazardReport.severity > 0,
-                    HazardReport.latitude.between(
-                        center_latitude - latitude_delta,
-                        center_latitude + latitude_delta,
-                    ),
-                    HazardReport.longitude.between(
-                        center_longitude - longitude_delta,
-                        center_longitude + longitude_delta,
-                    ),
-                )
-                .limit(500)
-                .all()
+            hazards = _get_route_hazards(
+                db,
+                center_latitude,
+                center_longitude,
+                latitude_delta,
+                longitude_delta,
             )
         except SQLAlchemyError:
             db.rollback()
@@ -91,14 +117,14 @@ async def create_route(payload: RouteRequest, db: DatabaseSession) -> RouteRespo
             )
             hazards = []
         hazard_lookup_finished = perf_counter()
-        disaster_zones = await fetch_disaster_zones(
-            *route_bbox(
-                payload.origin.latitude,
-                payload.origin.longitude,
-                payload.destination.latitude,
-                payload.destination.longitude,
-            )
+        disaster_bbox = route_bbox(
+            payload.origin.latitude,
+            payload.origin.longitude,
+            payload.destination.latitude,
+            payload.destination.longitude,
         )
+        disaster_zones = await fetch_disaster_zones(*disaster_bbox)
+        disaster_zones.extend(get_seeded_disaster_zones(db, *disaster_bbox))
         disaster_lookup_finished = perf_counter()
         result = await run_in_threadpool(
             calculate_walking_route,
