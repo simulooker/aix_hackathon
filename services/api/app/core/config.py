@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     ors_api_key: str | None = None
     disaster_api_url: str | None = None
     disaster_api_key: str | None = None
+    # 시연용: 값이 있으면 외부 API 대신 이 JSON 파일을 재난 피드로 사용한다.
+    # (실제 재난 발생을 기다릴 수 없어 시연이 불가능한 경우에만 사용)
+    disaster_demo_file: str | None = None
 
     smtp_host: str = "smtp.gmail.com"
     smtp_port: int = 587

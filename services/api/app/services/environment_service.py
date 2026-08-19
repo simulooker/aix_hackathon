@@ -1,5 +1,7 @@
+import json
 import logging
 from math import cos, radians
+from pathlib import Path
 from time import monotonic
 from typing import Any
 
@@ -111,6 +113,9 @@ async def fetch_disaster_zones(
     DISASTER_API_URL may contain {min_lat}, {min_lon}, {max_lat}, {max_lon}.
     The parser accepts common public-data response envelopes and coordinate names.
     """
+    if settings.disaster_demo_file:
+        return _demo_zones(min_latitude, min_longitude, max_latitude, max_longitude)
+
     if not settings.disaster_api_url or not settings.disaster_api_key:
         return []
 
@@ -144,17 +149,9 @@ async def fetch_disaster_zones(
         async with httpx.AsyncClient(timeout=5.0) as client:
             response = await client.get(url, params=params)
             response.raise_for_status()
-        records = _records(response.json())
-        zones: list[DisasterZone] = []
-        for index, record in enumerate(records):
-            zone = _zone_from_record(record, index)
-            if not zone:
-                continue
-            if not (min_latitude <= zone.latitude <= max_latitude):
-                continue
-            if not (min_longitude <= zone.longitude <= max_longitude):
-                continue
-            zones.append(zone)
+        zones = _zones_in_bbox(
+            response.json(), min_latitude, min_longitude, max_latitude, max_longitude
+        )
         if len(_disaster_cache) >= 64:
             oldest_key = min(_disaster_cache, key=lambda key: _disaster_cache[key][0])
             _disaster_cache.pop(oldest_key, None)
@@ -164,6 +161,50 @@ async def fetch_disaster_zones(
         logger.exception("Disaster feed lookup failed")
         _disaster_cache[cache_key] = (now, [])
         return []
+
+
+def _zones_in_bbox(
+    payload: Any,
+    min_latitude: float,
+    min_longitude: float,
+    max_latitude: float,
+    max_longitude: float,
+) -> list[DisasterZone]:
+    """응답 본문을 DisasterZone 목록으로 바꾸고 요청 영역 안의 것만 남긴다."""
+    zones: list[DisasterZone] = []
+    for index, record in enumerate(_records(payload)):
+        zone = _zone_from_record(record, index)
+        if not zone:
+            continue
+        if not (min_latitude <= zone.latitude <= max_latitude):
+            continue
+        if not (min_longitude <= zone.longitude <= max_longitude):
+            continue
+        zones.append(zone)
+    return zones
+
+
+def _demo_zones(
+    min_latitude: float,
+    min_longitude: float,
+    max_latitude: float,
+    max_longitude: float,
+) -> list[DisasterZone]:
+    """DISASTER_DEMO_FILE 이 지정되면 외부 호출 없이 고정 데이터를 재난 피드로 쓴다.
+
+    실제 API 응답과 같은 파서를 타므로 형식/동작이 동일하다.
+    """
+    path = Path(settings.disaster_demo_file or "")
+    if not path.is_absolute():
+        path = Path(__file__).resolve().parents[1] / path
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        logger.exception("Disaster demo file load failed: %s", path)
+        return []
+    return _zones_in_bbox(
+        payload, min_latitude, min_longitude, max_latitude, max_longitude
+    )
 
 
 def route_bbox(

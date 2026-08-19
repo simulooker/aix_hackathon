@@ -20,7 +20,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-FIXTURE_PATH = Path(__file__).with_name("its_disaster_fixture.json")
+FIXTURE_PATH = Path(__file__).resolve().parents[1] / "app" / "data" / "its_disaster_fixture.json"
 
 
 def _float(values: dict[str, list[str]], key: str) -> float | None:
