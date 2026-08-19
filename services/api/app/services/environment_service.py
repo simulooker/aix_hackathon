@@ -193,6 +193,8 @@ def _records(payload: Any) -> list[dict[str, Any]]:
                 payload.get("items"),
                 payload.get("features"),
                 payload.get("response", {}).get("body", {}).get("items"),
+                # ITS 돌발상황정보는 response 래퍼 없이 body.items 로 내려온다.
+                (payload.get("body") if isinstance(payload.get("body"), dict) else {}).get("items"),
             ]
         )
     for candidate in candidates:
@@ -216,7 +218,18 @@ def _zone_from_record(record: dict[str, Any], index: int) -> DisasterZone | None
 
     text = " ".join(
         str(properties.get(key, ""))
-        for key in ("eventType", "incidentType", "type", "title", "detail", "description")
+        for key in (
+            "eventType",
+            "eventDetailType",
+            "incidentType",
+            "type",
+            "title",
+            "detail",
+            "description",
+            "message",
+            "lanesBlockType",
+            "lanesBlocked",
+        )
     )
     lowered = text.lower()
     if any(word in lowered for word in ("침수", "홍수", "범람", "flood")):
@@ -228,15 +241,28 @@ def _zone_from_record(record: dict[str, Any], index: int) -> DisasterZone | None
     elif any(word in lowered for word in ("통제", "차단", "control", "closed")):
         kind = "road_control"
         default_title = "도로 통제 구간"
+    elif any(word in lowered for word in ("재난", "disaster")):
+        kind = "other"
+        default_title = "재난 통제 구간"
     else:
         return None
 
-    title = str(properties.get("title") or properties.get("eventType") or default_title)
+    title = str(
+        properties.get("title")
+        or properties.get("eventDetailType")
+        or properties.get("eventType")
+        or default_title
+    )
     return DisasterZone(
         id=str(properties.get("id") or properties.get("eventId") or f"disaster-{index}"),
         kind=kind,
         title=title,
-        description=str(properties.get("description") or properties.get("detail") or ""),
+        description=str(
+            properties.get("description")
+            or properties.get("detail")
+            or properties.get("message")
+            or ""
+        ),
         road_name=_string_or_none(properties.get("roadName") or properties.get("road_name")),
         latitude=latitude,
         longitude=longitude,

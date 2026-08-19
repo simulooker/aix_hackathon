@@ -154,8 +154,11 @@ export function KakaoMap({
       background:transparent;cursor:pointer;-webkit-tap-highlight-color:transparent}
     .hazard-marker{width:22px;height:22px;padding:0;border:3px solid #ffffff;border-radius:50%;
       box-shadow:0 2px 7px rgba(0,0,0,.45);pointer-events:none;box-sizing:border-box}
-    .disaster-pin{max-width:170px;padding:5px 9px;border:2px solid #fff;border-radius:13px;background:#b42318;color:#fff;
-      box-shadow:0 2px 7px rgba(0,0,0,.32);font:800 11px/1.25 -apple-system,BlinkMacSystemFont,sans-serif;text-align:center}
+    .disaster-warning{display:flex;flex-direction:column;align-items:center;gap:3px;pointer-events:none}
+    .disaster-warning-icon{line-height:0;filter:drop-shadow(0 2px 5px rgba(0,0,0,.45))}
+    .disaster-warning-text{max-width:150px;padding:2px 8px;border-radius:9px;background:rgba(20,37,31,.88);color:#fff;
+      font:800 10px/1.35 -apple-system,BlinkMacSystemFont,sans-serif;text-align:center;
+      white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     #slope-legend{position:fixed;top:12px;left:12px;z-index:20;display:none;flex-direction:column;gap:4px;
       padding:7px 9px;border-radius:10px;background:rgba(255,255,255,.93);box-shadow:0 2px 7px rgba(0,0,0,.18);
       color:#40534c;font:700 10px/1.2 -apple-system,BlinkMacSystemFont,sans-serif}
@@ -379,25 +382,44 @@ export function KakaoMap({
         data.disasters.forEach(function (disaster) {
           const position = new kakao.maps.LatLng(disaster.latitude, disaster.longitude);
           const color = disaster.kind === 'landslide' ? '#7A271A' : '#B42318';
+          // 통제 범위는 파선 원으로만 옅게 깔고, 표식은 삼각 경고 아이콘으로 세운다.
+          // (제보 위험은 원형 점이므로 재난과 형태가 겹치지 않게 구분한다.)
           new kakao.maps.Circle({
             map: map,
             center: position,
             radius: Number(disaster.radius_m || 80),
-            strokeWeight: 3,
+            strokeWeight: 2,
             strokeColor: color,
-            strokeOpacity: 0.95,
+            strokeOpacity: 0.75,
+            strokeStyle: 'shortdash',
             fillColor: color,
-            fillOpacity: 0.24,
+            fillOpacity: 0.13,
             zIndex: 7
           });
-          const label = document.createElement('div');
-          label.className = 'disaster-pin';
-          label.textContent = disaster.kind === 'landslide'
+
+          const warning = document.createElement('div');
+          warning.className = 'disaster-warning';
+
+          const icon = document.createElement('div');
+          icon.className = 'disaster-warning-icon';
+          icon.style.color = color;
+          icon.innerHTML = '<svg width="36" height="32" viewBox="0 0 36 32" xmlns="http://www.w3.org/2000/svg">'
+            + '<path d="M18 3 L34 29 L2 29 Z" fill="currentColor" stroke="#ffffff" stroke-width="3" stroke-linejoin="round"/>'
+            + '<rect x="16.3" y="12" width="3.4" height="9.6" rx="1.7" fill="#ffffff"/>'
+            + '<circle cx="18" cy="25.2" r="2" fill="#ffffff"/>'
+            + '</svg>';
+
+          const caption = document.createElement('span');
+          caption.className = 'disaster-warning-text';
+          caption.textContent = disaster.kind === 'landslide'
             ? '산사태 통제 · ' + disaster.title
-            : '침수·재난 통제 · ' + disaster.title;
+            : '재난 통제 · ' + disaster.title;
+
+          warning.appendChild(icon);
+          warning.appendChild(caption);
           new kakao.maps.CustomOverlay({
-            map: map, position: position, content: label,
-            xAnchor: 0.5, yAnchor: 1.35, zIndex: 9
+            map: map, position: position, content: warning,
+            xAnchor: 0.5, yAnchor: 1.1, zIndex: 9
           });
         });
 
