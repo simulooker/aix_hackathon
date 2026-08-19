@@ -73,9 +73,6 @@ class AIService:
             if not walkable.size:
                 continue
 
-            # A row can contain several disconnected surfaces. Only use the
-            # continuous corridor that overlaps the obstacle instead of adding
-            # unrelated sidewalks/roads elsewhere in the image.
             breaks = np.where(np.diff(walkable) > 1)[0] + 1
             segments = np.split(walkable, breaks)
             corridor = max(
@@ -110,35 +107,42 @@ class AIService:
         if label == "person":
             return "none"
         if label in STAIR_CLASSES:
-            # 계단의 실제 위험도는 이용자 유형에 따라 경로 계산 단계에서 결정한다.
-            # 사진 분석 자체에서는 일반 보행 위험으로 단정하지 않는다.
+            # 계단의 위험도는 프로필(휠체어/노약자)에 따라 경로 엔진 단계에서 차등 판단하므로 AI 단계는 none 처리
             return "none"
 
-        # The bottom of a detected box is a useful monocular distance proxy.
-        # Far-away objects should contribute less than objects near the user.
         distance_factor = min(1.0, max(0.25, (proximity - 0.30) / 0.55))
         effective_blocked = blocked * distance_factor
 
+        # 1. 차량 (motor_vehicle)
         if label == "motor_vehicle":
             if effective_blocked >= 0.65 and remaining < 0.08:
                 return "high"
             if effective_blocked >= 0.40:
                 return "medium"
-            if effective_blocked >= 0.18:
+            if effective_blocked >= 0.25:
                 return "low"
             return "none"
 
-        if remaining and remaining < 0.07 and effective_blocked >= 0.25:
-            return "medium" if label == "mobility_aid" else "high"
+        # 2. 이동 보조기구 (휠체어, 유모차 등)
         if label == "mobility_aid":
-            if effective_blocked >= 0.35:
+            if remaining and remaining < 0.07 and effective_blocked >= 0.35:
                 return "medium"
-            return "low" if effective_blocked >= 0.10 else "none"
-        if effective_blocked >= 0.40:
+            if effective_blocked >= 0.40:
+                return "medium"
+            return "low" if effective_blocked >= 0.20 else "none"
+
+        # 3. 고정 장애물 (fixed_obstacle) 및 기타 장애물
+        # 남은 보행로 공간이 충분하고(remaining >= 0.12) 침범율이 낮으면 갓길 시설물로 보아 none 처리
+        if remaining >= 0.12 and effective_blocked < 0.25:
+            return "none"
+
+        if remaining and remaining < 0.07 and effective_blocked >= 0.30:
             return "high"
-        if effective_blocked >= 0.18:
+        if effective_blocked >= 0.50:
+            return "high"
+        if effective_blocked >= 0.25:
             return "medium"
-        return "low" if effective_blocked >= 0.08 else "none"
+        return "low" if effective_blocked >= 0.18 else "none"
 
     def analyze(self, image_bytes: bytes) -> dict[str, Any]:
         import cv2
@@ -158,6 +162,8 @@ class AIService:
         mask = self._mask(surface, *image.shape[:2])
         detections: list[dict[str, Any]] = []
         height, width = image.shape[:2]
+
+        # 1. 장애물 모델 객체 검출
         if obstacles.boxes is not None:
             for box, class_id, confidence in zip(
                 obstacles.boxes.xyxy.int().cpu().tolist(),
@@ -186,6 +192,8 @@ class AIService:
                         ),
                     }
                 )
+
+        # 2. 노면(surface) 모델의 계단(stairs) 객체 검출
         stair_detections = 0
         if surface.boxes is not None:
             for box, class_id, confidence in zip(
@@ -221,6 +229,7 @@ class AIService:
                     }
                 )
                 stair_detections += 1
+
         risk = max(
             (item["risk"] for item in detections), key=RISK_ORDER.get, default="none"
         )

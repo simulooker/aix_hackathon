@@ -212,8 +212,13 @@ async def create_report(
         if requires_confirmation
         else []
     )
-    is_active = not requires_confirmation or bool(matching_reports)
-    
+
+    # 계단(stairs) 등 라우팅 전용 객체이거나, 일반 심각도가 0.3 이상일 때만 유효 활성화(is_active)
+    is_severity_sufficient = (
+        stored_severity >= 0.3 or bool(set(labels) & ROUTING_ONLY_HAZARD_LABELS)
+    )
+    is_active = (not requires_confirmation or bool(matching_reports)) and is_severity_sufficient
+
     report = HazardReport(
         latitude=latitude,
         longitude=longitude,

@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 ORS_API_KEY = settings.ors_api_key or ""
 
+# ORS 공식 v2 기본 엔드포인트
 ORS_BASE_URL = "https://api.openrouteservice.org"
 MAX_WALKING_DISTANCE_M = 10_000
 MAX_ROAD_WAYPOINTS = 25
@@ -118,11 +119,17 @@ def _distance_to_segment_m(
 
 
 def _candidate_score(candidate: _RouteCandidate, profile: str) -> float:
-    """후보 경로 스코어링"""
-    penalty_per_full_risk = {
+    """
+    위험 요소 3단계(low / medium / high) 및 계단/경사도 비용 산정:
+    - general: 위험 요소 0m, 계단 0m (최단거리)
+    - elderly: low(+30m) / medium(+60m) / high(+100m) + 계단(+80m) + 완만한 오르막 가산
+    - wheelchair: low(+51m) / medium(+102m) / high(+170m) + 계단(+5000m) + 평지 우선 우회
+    """
+    # 1. 일반 위험 장애물 기본 가중치
+    base_penalty = {
         "general": 0,
-        "elderly": 250,
-        "wheelchair": 800,
+        "elderly": 100,
+        "wheelchair": 170,
     }.get(profile, 0)
 
     ordinary_hazards = tuple(
@@ -130,33 +137,45 @@ def _candidate_score(candidate: _RouteCandidate, profile: str) -> float:
         for item in candidate.hazards
         if getattr(item, "hazard_type", None) not in STAIR_HAZARD_TYPES
     )
-    risk = sum(
-        max(0.0, min(1.0, float(getattr(item, "severity", 0) or 0)))
-        for item in ordinary_hazards
-    )
+
+    total_hazard_penalty = 0.0
+    for item in ordinary_hazards:
+        sev = getattr(item, "severity", None)
+        if sev is None:
+            risk_label = getattr(item, "risk", "low")
+            sev = {"high": 1.0, "medium": 0.6, "low": 0.3}.get(risk_label, 0.0)
+        else:
+            sev = max(0.0, min(1.0, float(sev)))
+        total_hazard_penalty += sev * base_penalty
+
+    # 2. 계단 개수 계산 및 사용자 유형별 차등 페널티 적용
     stairs = sum(
         getattr(item, "hazard_type", None) in STAIR_HAZARD_TYPES
         for item in candidate.hazards
     )
+    stair_penalty_per_unit = {
+        "general": 0,
+        "elderly": 80,
+        "wheelchair": 5000,
+    }.get(profile, 0)
+    stair_cost = stairs * stair_penalty_per_unit
 
-    grade_threshold = {"general": 20, "elderly": 5}.get(profile, 20)
-    grade_penalty = {"general": 0, "elderly": 22}.get(profile, 0)
-    ascent_penalty = {"general": 0, "elderly": 1.5, "wheelchair": 3.0}.get(profile, 0)
-
+    # 3. 경사도 및 상승고 비용 계산
+    slope_cost = 0.0
     if profile == "wheelchair":
         grade = max(0.0, candidate.max_grade_percent)
-        # 2~5%는 작은 불이익, 5~8.3%는 큰 불이익, 8.3% 초과는 강하게 우회한다.
-        slope_cost = max(0.0, min(grade, 5.0) - 2.0) * 10
+        slope_cost += max(0.0, min(grade, 5.0) - 2.0) * 10
         slope_cost += max(0.0, min(grade, 8.3) - 5.0) * 50
         slope_cost += max(0.0, grade - 8.3) * 120
-    else:
-        slope_cost = max(0, candidate.max_grade_percent - grade_threshold) * grade_penalty
-    slope_cost += candidate.ascent_m * ascent_penalty
+        slope_cost += candidate.ascent_m * 3.0
+    elif profile == "elderly":
+        if candidate.max_grade_percent >= 5.0:
+            slope_cost += (candidate.max_grade_percent - 5.0) * 22.0
+        slope_cost += candidate.ascent_m * 1.5
 
-    stair_cost = stairs * (50 if profile == "elderly" else 0)
     return (
         candidate.distance_m
-        + (risk * penalty_per_full_risk)
+        + total_hazard_penalty
         + slope_cost
         + stair_cost
     )
@@ -183,9 +202,10 @@ def _contains_blocked_wheelchair_slope(candidate: _RouteCandidate) -> bool:
 def _select_candidate(
     candidates: list[_RouteCandidate], profile: str, prefer_safe_route: bool
 ) -> tuple[_RouteCandidate, int]:
-    """최적 경로 선택"""
+    """최적 경로 선택 및 휠체어 전용 이동 불가 구간(계단/극경사) 필터링"""
     if not candidates:
         raise ValueError("후보 경로가 없습니다.")
+
     if profile == "wheelchair":
         original_candidates = candidates
         candidates = [
@@ -198,6 +218,7 @@ def _select_candidate(
             raise AccessibilityRouteBlocked(STAIR_ROUTE_MESSAGE)
         if not candidates:
             raise AccessibilityRouteBlocked(SLOPE_ROUTE_MESSAGE)
+
     shortest = min(candidates, key=lambda item: item.distance_m)
 
     if profile == "general":
@@ -209,8 +230,7 @@ def _select_candidate(
     if not prefer_safe_route or not has_safety_signal:
         return shortest, 0
 
-    # 노약자는 최대 20% 우회 허용, 휠체어는 최대 50%까지 크게 우회 허용
-    max_detour_ratio = {"elderly": 1.20, "wheelchair": 1.50}.get(profile, 1.12)
+    max_detour_ratio = {"elderly": 1.20, "wheelchair": 1.40}.get(profile, 1.12)
     reasonable = [
         item
         for item in candidates
@@ -221,50 +241,73 @@ def _select_candidate(
 
     selected = min(reasonable, key=lambda item: _candidate_score(item, profile))
     logger.info(
-        "Route candidates profile=%s shortest=%sm selected=%sm hazards(shortest=%s selected=%s) scores=%s",
+        "Route candidates profile=%s shortest=%sm selected=%sm hazards(shortest=%s selected=%s) max_grade=%.1f%% scores=%s",
         profile,
         shortest.distance_m,
         selected.distance_m,
         len(shortest.hazards),
         len(selected.hazards),
+        selected.max_grade_percent,
         [round(_candidate_score(item, profile), 1) for item in reasonable],
     )
     return selected, max(0, len(shortest.hazards) - len(selected.hazards))
 
 
 def _filter_hazards_for_profile(
-    hazards: list[Any], profile: str
+    hazards: list[Any],
+    profile: str,
+    origin: Any = None,
+    destination: Any = None,
 ) -> list[Any]:
     """
     사용자 유형별 차등 회피 필터링:
+    - 출발/도착점 35m 이내 핀은 제외하여 골목 스냅 밀림 원천 방지
     - wheelchair: 모든 제보 위험 요소를 회피 대상으로 지정
-    - elderly: 심각도가 높거나(>=0.6) 밀집된 구역만 선별 회피 (1~2개 가벼운 위험은 통과)
+    - elderly: 심각도 >= 0.6 또는 40m 내 3개 이상 밀집 구역만 선별 회피 (계단은 별도 점수 처리)
     - general: 회피 대상 없음
     """
     if not hazards or profile == "general":
         return []
 
+    valid_hazards = []
+    for h in hazards:
+        h_lat = getattr(h, "latitude", None)
+        h_lon = getattr(h, "longitude", None)
+        if h_lat is None or h_lon is None:
+            continue
+
+        if origin and distance_meters(origin.latitude, origin.longitude, h_lat, h_lon) <= 35:
+            continue
+        if destination and distance_meters(destination.latitude, destination.longitude, h_lat, h_lon) <= 35:
+            continue
+
+        valid_hazards.append(h)
+
     if profile == "wheelchair":
-        return list(hazards)
+        return valid_hazards
 
     if profile == "elderly":
         avoid_list = []
-        for h in hazards:
-            # 계단은 ORS에 강제 회피 영역으로 보내지 않고 정확히 50m 점수만 더한다.
+        for h in valid_hazards:
             if getattr(h, "hazard_type", None) in STAIR_HAZARD_TYPES:
                 continue
             sev = float(getattr(h, "severity", 0) or 0)
-            # 위험도가 높거나(medium 이상) 파손/공사 등의 심각한 요소는 즉시 회피
             if sev >= 0.6:
                 avoid_list.append(h)
                 continue
-            
-            # 위험도가 낮더라도 주변 40m 내에 위험 요소가 3개 이상 뭉쳐 있으면(밀집 구역) 회피
+
             h_lat = getattr(h, "latitude", 0)
             h_lon = getattr(h, "longitude", 0)
             nearby_count = sum(
-                1 for other in hazards
-                if distance_meters(h_lat, h_lon, getattr(other, "latitude", 0), getattr(other, "longitude", 0)) <= 40
+                1
+                for other in valid_hazards
+                if distance_meters(
+                    h_lat,
+                    h_lon,
+                    getattr(other, "latitude", 0),
+                    getattr(other, "longitude", 0),
+                )
+                <= 40
             )
             if nearby_count >= 3:
                 avoid_list.append(h)
@@ -421,7 +464,7 @@ def _avoid_polygons(
         ring.append(ring[0])
         polygons.append([ring])
 
-    # 2. 프로필에 맞게 필터링된 위험 지점 회피
+    # 2. 제보 지점 (반경 10m 슬림화로 좁은 골목길 단절 방지)
     if hazards:
         for hazard in hazards:
             h_lat = getattr(hazard, "latitude", None)
@@ -429,7 +472,7 @@ def _avoid_polygons(
             if h_lat is None or h_lon is None:
                 continue
 
-            h_radius_m = 15.0
+            h_radius_m = 10.0
             lat_r = h_radius_m / 111_320
             lon_r = h_radius_m / max(1, 111_320 * cos(radians(h_lat)))
 
@@ -570,11 +613,24 @@ def calculate_walking_route(
         },
     }
 
-    # 사용자 유형별로 회피 대상 위험 요소 선별
-    hazards_to_avoid = _filter_hazards_for_profile(hazards, profile)
+    # 출발/도착점 35m 이내 핀 제외 및 프로필별 차등 회피 폴리곤 적용
+    hazards_to_avoid = _filter_hazards_for_profile(hazards, profile, origin, destination)
     avoid_polygons = _avoid_polygons(disaster_zones, hazards_to_avoid)
+
+    options: dict[str, Any] = {}
     if avoid_polygons:
-        body["options"] = {"avoid_polygons": avoid_polygons}
+        options["avoid_polygons"] = avoid_polygons
+
+    # 휠체어 최대 경사 8% 제한 (빨간색 12%+ 급경사 차단)
+    if profile == "wheelchair":
+        options["profile_params"] = {
+            "restrictions": {
+                "maximum_incline": 8,
+            }
+        }
+
+    if options:
+        body["options"] = options
 
     profiles_to_try = (
         ["wheelchair", "foot-walking"] if profile == "wheelchair" else ["foot-walking"]
@@ -589,11 +645,13 @@ def calculate_walking_route(
                 try:
                     response = client.post(url, headers=headers, json=body)
 
+                    # 1. 대안 경로 옵션 실패 시 단일 경로 재시도
                     if response.status_code in {400, 404, 422} and "alternative_routes" in body:
                         retry_body = dict(body)
                         retry_body.pop("alternative_routes", None)
                         response = client.post(url, headers=headers, json=retry_body)
 
+                    # 2. 제약으로 경로가 끊길 시 위험/경사 제한 완화 후 재시도
                     if response.status_code in {400, 404, 422} and hazards_to_avoid:
                         relaxed_body = dict(body)
                         relaxed_polygons = _avoid_polygons(disaster_zones, None)
@@ -604,6 +662,7 @@ def calculate_walking_route(
                         relaxed_body.pop("alternative_routes", None)
                         response = client.post(url, headers=headers, json=relaxed_body)
 
+                    # 3. 반경 800m 밖인 경우 거리 무제한(-1) 스냅 최종 재시도
                     if response.status_code in {400, 404, 422} and body.get("radiuses") != [-1, -1]:
                         no_radius_body = dict(body)
                         no_radius_body["radiuses"] = [-1, -1]

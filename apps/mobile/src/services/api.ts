@@ -59,6 +59,17 @@ export async function restoreAccessToken(): Promise<void> {
   setAccessToken((await secureStore?.getItemAsync(ACCESS_TOKEN_KEY)) ?? undefined);
 }
 
+async function getValidAccessToken(): Promise<string | undefined> {
+  if (accessToken) return accessToken;
+  const secureStore = await getSecureStore();
+  const stored = await secureStore?.getItemAsync(ACCESS_TOKEN_KEY);
+  if (stored) {
+    accessToken = stored;
+    return stored;
+  }
+  return undefined;
+}
+
 export async function login(username: string, password: string): Promise<string> {
   const body = new URLSearchParams({ username, password });
   const response = await fetch(`${API_BASE_URL}/login`, {
@@ -80,32 +91,34 @@ export type CurrentUser = {
   email: string;
 };
 
-function authenticatedHeaders(extra?: Record<string, string>): Record<string, string> {
-  if (!accessToken) throw new Error('로그인이 필요합니다.');
-  return { ...extra, Authorization: `Bearer ${accessToken}` };
+async function authenticatedHeaders(extra?: Record<string, string>): Promise<Record<string, string>> {
+  const token = await getValidAccessToken();
+  if (!token) throw new Error('로그인이 필요합니다.');
+  return { ...extra, Authorization: `Bearer ${token}` };
 }
 
 export async function getCurrentUser(): Promise<CurrentUser> {
-  const response = await fetch(`${API_BASE_URL}/users/me`, {
-    headers: authenticatedHeaders(),
-  });
+  const headers = await authenticatedHeaders();
+  const response = await fetch(`${API_BASE_URL}/users/me`, { headers });
   if (!response.ok) throw new Error(await errorMessage(response));
   return response.json();
 }
 
 export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  const headers = await authenticatedHeaders({ 'Content-Type': 'application/json' });
   const response = await fetch(`${API_BASE_URL}/users/me/password`, {
     method: 'PUT',
-    headers: authenticatedHeaders({ 'Content-Type': 'application/json' }),
+    headers,
     body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
   });
   if (!response.ok) throw new Error(await errorMessage(response));
 }
 
 export async function deleteAccount(): Promise<void> {
+  const headers = await authenticatedHeaders();
   const response = await fetch(`${API_BASE_URL}/users/me`, {
     method: 'DELETE',
-    headers: authenticatedHeaders(),
+    headers,
   });
   if (!response.ok) throw new Error(await errorMessage(response));
 }
@@ -159,6 +172,9 @@ export async function submitReport(params: {
   headingDeg?: number;
   headingAccuracy?: number;
 }): Promise<ReportResponse> {
+  const token = await getValidAccessToken();
+  if (!token) throw new Error('로그인이 필요합니다. 다시 로그인해 주세요.');
+
   const form = new FormData();
   const filename = params.photoUri.split('/').pop() ?? 'photo.jpg';
   form.append('image', { uri: params.photoUri, name: filename, type: 'image/jpeg' } as unknown as Blob);
@@ -168,11 +184,15 @@ export async function submitReport(params: {
   if (params.headingAccuracy != null) {
     form.append('heading_accuracy', String(params.headingAccuracy));
   }
+
   const response = await fetch(`${API_BASE_URL}/reports`, {
     method: 'POST',
     body: form,
-    headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
   });
+
   if (!response.ok) throw new Error(await errorMessage(response));
   return response.json();
 }
