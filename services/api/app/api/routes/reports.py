@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 from math import asin, cos, radians, sin, sqrt
 from typing import Annotated
 from uuid import UUID
@@ -26,12 +27,15 @@ from app.services.ai_service import AIModelUnavailable, get_ai_service
 from app.services.storage_service import download_report_image, upload_report_image
 
 router = APIRouter(prefix="/reports", tags=["reports"])
+
 RISK_SEVERITY = {"none": 0.0, "low": 0.25, "medium": 0.6, "high": 1.0}
 TRANSIENT_HAZARD_LABELS = {"motor_vehicle", "two_wheeler"}
 ROUTING_ONLY_HAZARD_LABELS = {"stairs"}
-REPORT_CONFIRMATION_RADIUS_M = 5.0
-REPORT_CONFIRMATION_DIRECTION_DEGREES = 30.0
-MINIMUM_HEADING_ACCURACY = 2
+
+# 시간 정책: 1회당 6시간, 48시간(2일) 이상 누적 시 영구 위험 전환
+BASE_HOURS = 6
+PERMANENT_HOURS = 48
+SEARCH_RADIUS_M = 10.0
 
 DatabaseSession = Annotated[Session, Depends(get_db)]
 AuthenticatedUser = Annotated[User, Depends(get_current_user)]
@@ -53,52 +57,6 @@ def _distance_meters(
         * sin(longitude_delta / 2) ** 2
     )
     return 6_371_000 * 2 * asin(sqrt(value))
-
-
-def _matching_reports(
-    db: Session,
-    latitude: float,
-    longitude: float,
-    hazard_type: str,
-    heading_deg: float | None,
-    heading_accuracy: int | None,
-) -> list[HazardReport]:
-    if (
-        heading_deg is None
-        or heading_accuracy is None
-        or heading_accuracy < MINIMUM_HEADING_ACCURACY
-    ):
-        return []
-    latitude_delta = REPORT_CONFIRMATION_RADIUS_M / 111_320
-    longitude_delta = REPORT_CONFIRMATION_RADIUS_M / max(
-        1, 111_320 * cos(radians(latitude))
-    )
-    candidates = (
-        db.query(HazardReport)
-        .filter(
-            HazardReport.hazard_type == hazard_type,
-            HazardReport.heading_deg.is_not(None),
-            HazardReport.heading_accuracy >= MINIMUM_HEADING_ACCURACY,
-            HazardReport.severity > 0,
-            HazardReport.latitude.between(
-                latitude - latitude_delta, latitude + latitude_delta
-            ),
-            HazardReport.longitude.between(
-                longitude - longitude_delta, longitude + longitude_delta
-            ),
-        )
-        .all()
-    )
-    return [
-        report
-        for report in candidates
-        if _distance_meters(
-            latitude, longitude, report.latitude, report.longitude
-        )
-        <= REPORT_CONFIRMATION_RADIUS_M
-        and abs((heading_deg - report.heading_deg + 180) % 360 - 180)
-        <= REPORT_CONFIRMATION_DIRECTION_DEGREES
-    ]
 
 
 @router.get("/{report_id}/image")
@@ -197,50 +155,88 @@ async def create_report(
         RISK_SEVERITY[analysis["overall_risk"]],
         0.25 if set(labels) & ROUTING_ONLY_HAZARD_LABELS else 0.0,
     )
-    requires_confirmation = bool(labels) and set(labels).issubset(
-        TRANSIENT_HAZARD_LABELS
-    )
-    matching_reports = (
-        _matching_reports(
-            db,
-            latitude,
-            longitude,
-            most_serious["label"],
-            heading_deg,
-            heading_accuracy,
-        )
-        if requires_confirmation
-        else []
-    )
 
-    # 계단(stairs) 등 라우팅 전용 객체이거나, 일반 심각도가 0.3 이상일 때만 유효 활성화(is_active)
     is_severity_sufficient = (
-        stored_severity >= 0.3 or bool(set(labels) & ROUTING_ONLY_HAZARD_LABELS)
+        stored_severity >= 0.25 or bool(set(labels) & ROUTING_ONLY_HAZARD_LABELS)
     )
-    is_active = (not requires_confirmation or bool(matching_reports)) and is_severity_sufficient
+    is_active = is_severity_sufficient
 
-    report = HazardReport(
-        latitude=latitude,
-        longitude=longitude,
-        heading_deg=heading_deg,
-        heading_accuracy=heading_accuracy,
-        hazard_type=most_serious["label"],
-        confidence=max(
+    primary_hazard = most_serious["label"] if most_serious else None
+    now = datetime.now(timezone.utc)
+
+    # 1. 동일 위치(10m 이내)에 활성화되어 있는 이전 제보 검색
+    latitude_delta = SEARCH_RADIUS_M / 111_320
+    longitude_delta = SEARCH_RADIUS_M / max(1, 111_320 * cos(radians(latitude)))
+
+    nearby_active_reports = (
+        db.query(HazardReport)
+        .filter(
+            HazardReport.is_active.is_(True),
+            HazardReport.latitude.between(latitude - latitude_delta, latitude + latitude_delta),
+            HazardReport.longitude.between(longitude - longitude_delta, longitude + longitude_delta),
+        )
+        .all()
+    )
+
+    matching_existing_report: HazardReport | None = None
+    for old_rep in nearby_active_reports:
+        if _distance_meters(latitude, longitude, old_rep.latitude, old_rep.longitude) <= SEARCH_RADIUS_M:
+            matching_existing_report = old_rep
+            # 과거 제보는 지도에 중복으로 뜨지 않도록 비활성화
+            old_rep.is_active = False
+
+    # 2. 이동성 장애물(차량/오토바이) 시간 및 누적 처리
+    report_count = 1
+    expires_at = None
+
+    if primary_hazard in TRANSIENT_HAZARD_LABELS:
+        if matching_existing_report and matching_existing_report.hazard_type in TRANSIENT_HAZARD_LABELS:
+            prev_count = getattr(matching_existing_report, "report_count", 1) or 1
+            report_count = prev_count + 1
+            total_hours = BASE_HOURS * report_count
+
+            if total_hours >= PERMANENT_HOURS:
+                # 48시간 이상 누적: 영구 위험으로 전환 (만료 없음)
+                expires_at = None
+            else:
+                # 48시간 미만: 현재 시각 기준 시간 연장
+                expires_at = now + timedelta(hours=total_hours)
+        else:
+            # 최초 제보: 기본 6시간 부여
+            expires_at = now + timedelta(hours=BASE_HOURS)
+    else:
+        # 고정 장애물/계단: 시간제한 없음 (영구)
+        expires_at = None
+
+    # 3. 신규 제보 레코드 생성
+    report_kwargs = {
+        "latitude": latitude,
+        "longitude": longitude,
+        "heading_deg": heading_deg,
+        "heading_accuracy": heading_accuracy,
+        "hazard_type": primary_hazard,
+        "confidence": max(
             (item["confidence"] for item in reportable_on_walkway), default=None
         ),
-        severity=stored_severity,
-        overall_risk=analysis["overall_risk"],
-        detected_labels=",".join(labels) or None,
-        photo_path=photo_path,
-        status="verified",
-        is_active=is_active,
-    )
+        "severity": stored_severity,
+        "overall_risk": analysis["overall_risk"],
+        "detected_labels": ",".join(labels) or None,
+        "photo_path": photo_path,
+        "status": "verified",
+        "is_active": is_active,
+    }
+
+    # Model 컬럼에 report_count, expires_at이 정의되어 있는 경우 세팅
+    if hasattr(HazardReport, "report_count"):
+        report_kwargs["report_count"] = report_count
+    if hasattr(HazardReport, "expires_at"):
+        report_kwargs["expires_at"] = expires_at
+
+    report = HazardReport(**report_kwargs)
     db.add(report)
-    if is_active:
-        for matching_report in matching_reports:
-            matching_report.is_active = True
     db.commit()
     db.refresh(report)
+
     return ReportResponse(
         report_id=report.id,
         status=report.status,
@@ -272,7 +268,9 @@ def get_nearby_reports(
 ) -> list[HazardReport]:
     latitude_delta = radius_m / 111_320
     longitude_delta = radius_m / max(1, 111_320 * cos(radians(lat)))
-    return (
+    now = datetime.now(timezone.utc)
+
+    query = (
         db.query(HazardReport)
         .filter(
             HazardReport.status.in_(["verified", "pending"]),
@@ -283,7 +281,16 @@ def get_nearby_reports(
                 lon - longitude_delta, lon + longitude_delta
             ),
         )
-        .order_by(HazardReport.severity.desc(), HazardReport.created_at.desc())
+    )
+
+    # expires_at 컬럼이 존재하는 경우 만료 시각(TTL) 필터링 적용
+    if hasattr(HazardReport, "expires_at"):
+        query = query.filter(
+            (HazardReport.expires_at.is_(None)) | (HazardReport.expires_at >= now)
+        )
+
+    return (
+        query.order_by(HazardReport.severity.desc(), HazardReport.created_at.desc())
         .limit(500)
         .all()
     )

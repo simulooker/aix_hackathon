@@ -1,5 +1,6 @@
 import logging
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from math import asin, cos, pi, radians, sin, sqrt
 from typing import Any
 
@@ -69,12 +70,32 @@ def distance_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> float
     return 6_371_000 * 2 * asin(sqrt(value))
 
 
+def _is_hazard_valid(hazard: Any, now: datetime) -> bool:
+    """
+    위험 요소의 활성화(is_active) 상태 및 만료 시간(expires_at) 유효성을 검증합니다.
+    - is_active가 False이면 제외
+    - expires_at이 지정되어 있고 현재 시각보다 과거이면(만료됨) 제외
+    """
+    if getattr(hazard, "is_active", True) is False:
+        return False
+    expires_at = getattr(hazard, "expires_at", None)
+    if expires_at is not None:
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if expires_at < now:
+            return False
+    return True
+
+
 def _nearby_hazards(
     geometry: list[dict[str, float]], hazards: list[Any], radius_m: float = 18
 ) -> tuple[Any, ...]:
     """경로 좌표 사이의 선분까지 계산해 실제 경로 주변 위험 요소를 추출합니다."""
+    now = datetime.now(timezone.utc)
     nearby: list[Any] = []
     for hazard in hazards:
+        if not _is_hazard_valid(hazard, now):
+            continue
         h_lat = getattr(hazard, "latitude", None)
         h_lon = getattr(hazard, "longitude", None)
         if h_lat is None or h_lon is None:
@@ -125,7 +146,6 @@ def _candidate_score(candidate: _RouteCandidate, profile: str) -> float:
     - elderly: low(+30m) / medium(+60m) / high(+100m) + 계단(+80m) + 완만한 오르막 가산
     - wheelchair: low(+51m) / medium(+102m) / high(+170m) + 계단(+5000m) + 평지 우선 우회
     """
-    # 1. 일반 위험 장애물 기본 가중치
     base_penalty = {
         "general": 0,
         "elderly": 100,
@@ -148,7 +168,6 @@ def _candidate_score(candidate: _RouteCandidate, profile: str) -> float:
             sev = max(0.0, min(1.0, float(sev)))
         total_hazard_penalty += sev * base_penalty
 
-    # 2. 계단 개수 계산 및 사용자 유형별 차등 페널티 적용
     stairs = sum(
         getattr(item, "hazard_type", None) in STAIR_HAZARD_TYPES
         for item in candidate.hazards
@@ -160,7 +179,6 @@ def _candidate_score(candidate: _RouteCandidate, profile: str) -> float:
     }.get(profile, 0)
     stair_cost = stairs * stair_penalty_per_unit
 
-    # 3. 경사도 및 상승고 비용 계산
     slope_cost = 0.0
     if profile == "wheelchair":
         grade = max(0.0, candidate.max_grade_percent)
@@ -261,6 +279,7 @@ def _filter_hazards_for_profile(
 ) -> list[Any]:
     """
     사용자 유형별 차등 회피 필터링:
+    - 만료된 핀(expires_at < now)은 자동 배제
     - 출발/도착점 35m 이내 핀은 제외하여 골목 스냅 밀림 원천 방지
     - wheelchair: 모든 제보 위험 요소를 회피 대상으로 지정
     - elderly: 심각도 >= 0.6 또는 40m 내 3개 이상 밀집 구역만 선별 회피 (계단은 별도 점수 처리)
@@ -269,8 +288,12 @@ def _filter_hazards_for_profile(
     if not hazards or profile == "general":
         return []
 
+    now = datetime.now(timezone.utc)
     valid_hazards = []
     for h in hazards:
+        if not _is_hazard_valid(h, now):
+            continue
+
         h_lat = getattr(h, "latitude", None)
         h_lon = getattr(h, "longitude", None)
         if h_lat is None or h_lon is None:
@@ -613,7 +636,7 @@ def calculate_walking_route(
         },
     }
 
-    # 출발/도착점 35m 이내 핀 제외 및 프로필별 차등 회피 폴리곤 적용
+    # 출발/도착점 35m 이내 핀 제외 및 만료된 핀 배제 후 회피 폴리곤 생성
     hazards_to_avoid = _filter_hazards_for_profile(hazards, profile, origin, destination)
     avoid_polygons = _avoid_polygons(disaster_zones, hazards_to_avoid)
 
@@ -621,7 +644,6 @@ def calculate_walking_route(
     if avoid_polygons:
         options["avoid_polygons"] = avoid_polygons
 
-    # 휠체어 최대 경사 8% 제한 (빨간색 12%+ 급경사 차단)
     if profile == "wheelchair":
         options["profile_params"] = {
             "restrictions": {
@@ -645,13 +667,11 @@ def calculate_walking_route(
                 try:
                     response = client.post(url, headers=headers, json=body)
 
-                    # 1. 대안 경로 옵션 실패 시 단일 경로 재시도
                     if response.status_code in {400, 404, 422} and "alternative_routes" in body:
                         retry_body = dict(body)
                         retry_body.pop("alternative_routes", None)
                         response = client.post(url, headers=headers, json=retry_body)
 
-                    # 2. 제약으로 경로가 끊길 시 위험/경사 제한 완화 후 재시도
                     if response.status_code in {400, 404, 422} and hazards_to_avoid:
                         relaxed_body = dict(body)
                         relaxed_polygons = _avoid_polygons(disaster_zones, None)
@@ -662,7 +682,6 @@ def calculate_walking_route(
                         relaxed_body.pop("alternative_routes", None)
                         response = client.post(url, headers=headers, json=relaxed_body)
 
-                    # 3. 반경 800m 밖인 경우 거리 무제한(-1) 스냅 최종 재시도
                     if response.status_code in {400, 404, 422} and body.get("radiuses") != [-1, -1]:
                         no_radius_body = dict(body)
                         no_radius_body["radiuses"] = [-1, -1]

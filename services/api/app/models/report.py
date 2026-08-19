@@ -32,6 +32,15 @@ class HazardReport(Base):
     detected_labels: Mapped[str | None] = mapped_column(Text, nullable=True)
     # photo_path 변수가 Supabase DB의 'image_url' 컬럼을 가리키도록 설정
     photo_path: Mapped[str | None] = mapped_column("image_url", Text, nullable=True)
+    
+    # 💡 [추가] 누적 제보 횟수 및 만료 예정 시각(TTL)
+    report_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1
+    )
+    expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
