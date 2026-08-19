@@ -55,6 +55,14 @@ const getHazardLabel = (type?: string | null) => {
   return HAZARD_LABELS[type] ?? type;
 };
 
+// 💡 null, undefined 타입을 모두 허용하여 TypeScript 에러 방지
+const getHazardRiskText = (type?: string | null, severity?: number | null) => {
+  if (type === 'stairs' || type === 'stair') {
+    return '휠체어 통행 불가';
+  }
+  return `위험도 ${Math.round((severity ?? 0) * 100)}%`;
+};
+
 export default function MapScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -472,8 +480,14 @@ export default function MapScreen() {
               <Text style={styles.hazardTypeBadge}>
                 {getHazardLabel(selectedHazard?.hazard_type)}
               </Text>
-              <Text style={styles.hazardSeverityText}>
-                위험도 {Math.round((selectedHazard?.severity ?? 0) * 100)}%
+              {/* 💡 계단일 때는 '휠체어 통행 불가', 일반 장애물일 때는 '위험도 N%' 출력 */}
+              <Text
+                style={[
+                  styles.hazardSeverityText,
+                  (selectedHazard?.hazard_type === 'stairs' || selectedHazard?.hazard_type === 'stair') &&
+                    styles.hazardStairsText,
+                ]}>
+                {getHazardRiskText(selectedHazard?.hazard_type, selectedHazard?.severity)}
               </Text>
             </View>
 
@@ -818,6 +832,10 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: '#596A64',
+  },
+  hazardStairsText: {
+    color: '#D92D20', // 계단 전용 강조 빨간색 텍스트
+    fontWeight: '800',
   },
   hazardPhoto: {
     width: '100%',

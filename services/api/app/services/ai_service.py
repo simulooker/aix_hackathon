@@ -101,48 +101,32 @@ class AIService:
         blocked: float,
         remaining: float,
         proximity: float = 1.0,
+        box_width_ratio: float = 0.0,
     ) -> str:
-        if not on_walkway:
-            return "none"
-        if label == "person":
-            return "none"
-        if label in STAIR_CLASSES:
-            # 계단의 위험도는 프로필(휠체어/노약자)에 따라 경로 엔진 단계에서 차등 판단하므로 AI 단계는 none 처리
+        if not on_walkway or label == "person" or label in STAIR_CLASSES:
             return "none"
 
         distance_factor = min(1.0, max(0.25, (proximity - 0.30) / 0.55))
         effective_blocked = blocked * distance_factor
 
-        # 1. 차량 (motor_vehicle)
-        if label == "motor_vehicle":
-            if effective_blocked >= 0.65 and remaining < 0.08:
-                return "high"
-            if effective_blocked >= 0.40:
-                return "medium"
-            if effective_blocked >= 0.25:
-                return "low"
+        # 1. 갓길 객체 (물체 폭이 좁거나 통행로가 넉넉히 남아있는 경우 무조건 통과)
+        # 장애물 하나의 너비가 화면의 35% 미만이면 통행 공간이 충분하므로 위험 없음 처리
+        if box_width_ratio < 0.35 and effective_blocked < 0.60:
             return "none"
 
-        # 2. 이동 보조기구 (휠체어, 유모차 등)
-        if label == "mobility_aid":
-            if remaining and remaining < 0.07 and effective_blocked >= 0.35:
-                return "medium"
-            if effective_blocked >= 0.40:
-                return "medium"
-            return "low" if effective_blocked >= 0.20 else "none"
-
-        # 3. 고정 장애물 (fixed_obstacle) 및 기타 장애물
-        # 남은 보행로 공간이 충분하고(remaining >= 0.12) 침범율이 낮으면 갓길 시설물로 보아 none 처리
-        if remaining >= 0.12 and effective_blocked < 0.25:
+        # 2. 남은 보행로가 화면의 10% 이상이면 정상 통행
+        if remaining >= 0.10 and effective_blocked < 0.50:
             return "none"
 
-        if remaining and remaining < 0.07 and effective_blocked >= 0.30:
+        # 3. 도로를 실제로 완전히 틀어막은 경우에만 위험 판정
+        # 도로 전체의 60% 이상을 틀어막고 남은 폭이 거의 없을 때만 high
+        if effective_blocked >= 0.60 and remaining < 0.06:
             return "high"
-        if effective_blocked >= 0.50:
-            return "high"
-        if effective_blocked >= 0.25:
+
+        if effective_blocked >= 0.45:
             return "medium"
-        return "low" if effective_blocked >= 0.18 else "none"
+
+        return "none"
 
     def analyze(self, image_bytes: bytes) -> dict[str, Any]:
         import cv2
@@ -173,6 +157,8 @@ class AIService:
                 overlap, blocked, remaining, proximity = self._measure(mask, box)
                 on_walkway = overlap >= 0.25
                 label = obstacles.names[class_id]
+                box_width_ratio = (box[2] - box[0]) / max(1, width)
+
                 detections.append(
                     {
                         "label": label,
@@ -188,7 +174,12 @@ class AIService:
                         "proximity": round(proximity, 4),
                         "on_walkway": on_walkway,
                         "risk": self._risk(
-                            label, on_walkway, blocked, remaining, proximity
+                            label,
+                            on_walkway,
+                            blocked,
+                            remaining,
+                            proximity,
+                            box_width_ratio,
                         ),
                     }
                 )
@@ -207,6 +198,8 @@ class AIService:
                 x1, y1, x2, y2 = box
                 blocked = min(1.0, max(0, x2 - x1) / max(1, width))
                 proximity = min(1.0, max(0.0, y2 / max(1, height)))
+                box_width_ratio = (x2 - x1) / max(1, width)
+
                 detections.append(
                     {
                         "label": label,
@@ -224,7 +217,12 @@ class AIService:
                         "proximity": round(proximity, 4),
                         "on_walkway": True,
                         "risk": self._risk(
-                            label, True, blocked, max(0.0, 1.0 - blocked), proximity
+                            label,
+                            True,
+                            blocked,
+                            max(0.0, 1.0 - blocked),
+                            proximity,
+                            box_width_ratio,
                         ),
                     }
                 )

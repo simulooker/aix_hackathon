@@ -4,11 +4,11 @@ export type HazardReport = {
   id: string;
   latitude: number;
   longitude: number;
-  heading_deg: number | null;
-  heading_accuracy: number | null;
-  hazard_type: string | null;
-  confidence: number | null;
-  severity: number | null;
+  heading_deg?: number | null;
+  heading_accuracy?: number | null;
+  hazard_type?: string | null;
+  confidence?: number | null;
+  severity?: number | null; // 💡 null 및 undefined 허용
   is_active: boolean;
   created_at: string;
   photo_path?: string | null;
