@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import WebView, { WebViewMessageEvent } from 'react-native-webview';
 
-import type { BusStop, LiveBus } from '@/src/types/bus';
+import type { BusStop } from '@/src/types/bus';
 import type { DisasterZone } from '@/src/types/environment';
 import type { HazardReport } from '@/src/types/hazard';
 import type { RoutePoint, TransitLeg } from '@/src/types/route';
@@ -17,7 +17,6 @@ type KakaoMapProps = {
   route?: RoutePoint[];
   transitLegs?: TransitLeg[];
   busStops?: BusStop[];
-  buses?: LiveBus[];
   onMapPress?: (point: RoutePoint) => void;
   onViewportChange?: (viewport: MapViewport) => void;
   onHazardPress?: (hazard: HazardReport) => void;
@@ -55,7 +54,6 @@ export function KakaoMap({
   route = [],
   transitLegs = [],
   busStops = [],
-  buses = [],
   onMapPress,
   onViewportChange,
   onHazardPress,
@@ -68,22 +66,21 @@ export function KakaoMap({
   const [mapError, setMapError] = useState<string>();
   const webViewRef = useRef<WebView>(null);
 
-  // 버스 데이터는 20초마다 바뀌므로 HTML 을 다시 만들지 않고 지도에 주입만 한다.
+  // 버스정류장 데이터가 바뀌어도 HTML 을 다시 만들지 않고 지도에 주입만 한다.
   // (HTML 을 새로 만들면 WebView 가 통째로 리로드되어 지도가 깜빡인다.)
-  const busPayloadRef = useRef({ stops: busStops, buses });
-  busPayloadRef.current = { stops: busStops, buses };
+  const busPayloadRef = useRef({ stops: busStops });
+  busPayloadRef.current = { stops: busStops };
   const hazardPayloadRef = useRef(hazards);
   hazardPayloadRef.current = hazards;
   const locationPayloadRef = useRef(currentLocation);
   locationPayloadRef.current = currentLocation;
 
-  const pushBusLayer = useCallback((payload: { stops: BusStop[]; buses: LiveBus[] }) => {
+  const pushBusLayer = useCallback((payload: { stops: BusStop[] }) => {
     const encoded = JSON.stringify(JSON.stringify(payload));
     webViewRef.current?.injectJavaScript(`
       if (window.__withyouBus) {
         var payload = JSON.parse(${encoded});
         window.__withyouBus.setStops(payload.stops);
-        window.__withyouBus.setBuses(payload.buses);
       }
       true;
     `);
@@ -110,8 +107,8 @@ export function KakaoMap({
   }, []);
 
   useEffect(() => {
-    pushBusLayer({ stops: busStops, buses });
-  }, [busStops, buses, pushBusLayer]);
+    pushBusLayer({ stops: busStops });
+  }, [busStops, pushBusLayer]);
 
   useEffect(() => {
     pushHazardLayer(hazards);
@@ -155,11 +152,6 @@ export function KakaoMap({
     #status{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:24px;color:#52645e;font:14px sans-serif;text-align:center}
     .bus-stop{width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:9px;
       background:#fff;border:2px solid #1f6feb;box-shadow:0 2px 5px rgba(0,0,0,.3);cursor:pointer;font-size:17px;line-height:1}
-    .bus-pin{position:relative;cursor:pointer;font:700 12px/1 -apple-system,BlinkMacSystemFont,sans-serif;white-space:nowrap}
-    .bus-pin .body{display:flex;align-items:center;gap:5px;padding:5px 10px;border-radius:14px;background:#1f6feb;color:#fff;box-shadow:0 2px 6px rgba(0,0,0,.32)}
-    .bus-pin .glyph{width:9px;height:11px;border-radius:2px;background:#fff;box-shadow:inset 0 3px 0 #1f6feb,inset 0 5px 0 #fff}
-    .bus-pin .tail{position:absolute;left:50%;bottom:-5px;width:0;height:0;margin-left:-5px;
-      border-left:5px solid transparent;border-right:5px solid transparent;border-top:6px solid #1f6feb}
     .bus-tip{padding:5px 8px;font:12px sans-serif;white-space:nowrap}
     .hazard-marker{width:12px;height:12px;padding:0;border:1.5px solid #fff;border-radius:50%;
       box-shadow:0 1px 4px rgba(0,0,0,.3);cursor:pointer}
@@ -192,12 +184,11 @@ export function KakaoMap({
     }
     window.onerror = function(message) { fail('지도 실행 오류: ' + message); };
 
-    // 버스정류장 / 실시간 버스 오버레이 레이어.
-    // React Native 쪽에서 window.__withyouBus.setStops / setBuses 로 갱신한다.
+    // 버스정류장 오버레이 레이어.
+    // React Native 쪽에서 window.__withyouBus.setStops 로 갱신한다.
     function createBusLayer(map) {
       const tip = new kakao.maps.InfoWindow({ removable: true });
       let stopOverlays = [];
-      const busOverlays = {}; // vehicleNo -> { overlay, label }
 
       function openTip(position, text) {
         tip.setContent('<div class="bus-tip">' + text + '</div>');
@@ -226,62 +217,6 @@ export function KakaoMap({
               map: map.getLevel() <= 4 ? map : null, position: position, content: element,
               xAnchor: 0.5, yAnchor: 0.5, zIndex: 3, clickable: true
             });
-          });
-        },
-
-        setBuses: function (buses) {
-          const seen = {};
-          (buses || []).forEach(function (bus) {
-            if (!bus || !bus.vehicleNo) return;
-            seen[bus.vehicleNo] = true;
-            const position = new kakao.maps.LatLng(bus.latitude, bus.longitude);
-            const existing = busOverlays[bus.vehicleNo];
-
-            if (existing) {
-              // 이미 있는 차량은 위치만 옮겨서 깜빡임 없이 움직이게 한다.
-              existing.overlay.setPosition(position);
-              existing.label.textContent = bus.routeNo || '';
-              existing.position = position;
-              existing.bus = bus;
-              return;
-            }
-
-            const element = document.createElement('div');
-            element.className = 'bus-pin';
-            const body = document.createElement('div');
-            body.className = 'body';
-            const glyph = document.createElement('span');
-            glyph.className = 'glyph';
-            const label = document.createElement('span');
-            label.textContent = bus.routeNo || '';
-            body.appendChild(glyph);
-            body.appendChild(label);
-            const tail = document.createElement('div');
-            tail.className = 'tail';
-            element.appendChild(body);
-            element.appendChild(tail);
-
-            const entry = { position: position, bus: bus, label: label };
-            element.addEventListener('click', function () {
-              const detail = entry.bus;
-              const parts = [escapeHtml(detail.routeNo) + '번'];
-              if (detail.nodeName) parts.push(escapeHtml(detail.nodeName) + ' 부근');
-              if (detail.vehicleNo) parts.push(escapeHtml(detail.vehicleNo));
-              openTip(entry.position, parts.join('<br/>'));
-            });
-
-            entry.overlay = new kakao.maps.CustomOverlay({
-              map: map, position: position, content: element,
-              xAnchor: 0.5, yAnchor: 1.1, zIndex: 8, clickable: true
-            });
-            busOverlays[bus.vehicleNo] = entry;
-          });
-
-          // 더 이상 내려오지 않는 차량(운행 종료 등)은 지운다.
-          Object.keys(busOverlays).forEach(function (vehicleNo) {
-            if (seen[vehicleNo]) return;
-            busOverlays[vehicleNo].overlay.setMap(null);
-            delete busOverlays[vehicleNo];
           });
         },
 

@@ -27,13 +27,12 @@ import { getEnvironmentContext, getNearbyHazards, getReportImageUrl } from '@/sr
 import { useAuthStore } from '@/src/stores/auth-store';
 import { usePreferencesStore } from '@/src/stores/preferences-store';
 import { useRouteStore } from '@/src/stores/route-store';
-import type { BusStop, LiveBus } from '@/src/types/bus';
+import type { BusStop } from '@/src/types/bus';
 import type { EnvironmentContext } from '@/src/types/environment';
 import type { HazardReport } from '@/src/types/hazard';
 import type { RoutePoint } from '@/src/types/route';
 
 const EMPTY_STOPS: BusStop[] = [];
-const EMPTY_BUSES: LiveBus[] = [];
 const HAZARD_LABELS: Record<string, string> = {
   person: '보행자',
   motor_vehicle: '차량',
@@ -90,7 +89,6 @@ export default function MapScreen() {
 
   const {
     stops: busStops,
-    buses,
     loading: busesLoading,
     error: busError,
   } = useLiveBuses(
@@ -100,7 +98,6 @@ export default function MapScreen() {
 
   // 매 렌더마다 새 배열을 넘기면 지도 WebView 가 불필요하게 다시 그려진다.
   const visibleBusStops = useMemo(() => (showLiveBuses ? busStops : EMPTY_STOPS), [busStops, showLiveBuses]);
-  const visibleBuses = useMemo(() => (showLiveBuses ? buses : EMPTY_BUSES), [buses, showLiveBuses]);
 
   // 안내 화면에서 뒤로 돌아와 메인 지도로 복귀할 때 이전 경로선 초기화
   useFocusEffect(
@@ -299,7 +296,6 @@ export default function MapScreen() {
         route={route?.geometry}
         transitLegs={route?.transit_legs}
         busStops={visibleBusStops}
-        buses={visibleBuses}
         onMapPress={(point) => chooseDestination(point, '지도에서 선택한 위치')}
         onViewportChange={setMapViewport}
         onHazardPress={setSelectedHazard}

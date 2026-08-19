@@ -4,7 +4,7 @@ import {
   BusApiKeyMissingError,
   getDisplayableNearbyBusStops,
 } from '@/src/services/bus';
-import type { BusStop, LiveBus } from '@/src/types/bus';
+import type { BusStop } from '@/src/types/bus';
 import type { RoutePoint } from '@/src/types/route';
 
 function distanceMeters(a: RoutePoint, b: RoutePoint): number {
@@ -20,7 +20,6 @@ function distanceMeters(a: RoutePoint, b: RoutePoint): number {
 
 type UseLiveBusesResult = {
   stops: BusStop[];
-  buses: LiveBus[];
   loading: boolean;
   error?: string;
   updatedAt?: number;
@@ -32,7 +31,6 @@ type UseLiveBusesResult = {
  */
 export function useLiveBuses(coordinates: RoutePoint | undefined, enabled: boolean): UseLiveBusesResult {
   const [stops, setStops] = useState<BusStop[]>([]);
-  const [buses, setBuses] = useState<LiveBus[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
   const [updatedAt, setUpdatedAt] = useState<number>();
@@ -46,7 +44,6 @@ export function useLiveBuses(coordinates: RoutePoint | undefined, enabled: boole
 
   const reset = useCallback(() => {
     setStops([]);
-    setBuses([]);
     setError(undefined);
     setUpdatedAt(undefined);
     setLoading(false);
@@ -70,7 +67,6 @@ export function useLiveBuses(coordinates: RoutePoint | undefined, enabled: boole
           (left, right) => distanceMeters(origin, left) - distanceMeters(origin, right),
         );
         setStops(sorted);
-        setBuses([]);
         setError(undefined);
         setUpdatedAt(Date.now());
       } catch (cause) {
@@ -94,5 +90,5 @@ export function useLiveBuses(coordinates: RoutePoint | undefined, enabled: boole
     };
   }, [coordinateKey, enabled, reset]);
 
-  return { stops, buses, loading, error, updatedAt };
+  return { stops, loading, error, updatedAt };
 }

@@ -21,8 +21,30 @@ async function getSecureStore() {
 
 async function errorMessage(response: Response): Promise<string> {
   try {
-    const payload = (await response.json()) as { detail?: string };
-    return payload.detail ?? `요청을 처리하지 못했습니다. (${response.status})`;
+    const payload = (await response.json()) as { detail?: unknown };
+    const detail = payload.detail;
+    if (typeof detail === 'string' && detail.trim()) return detail;
+
+    const validationErrors = Array.isArray(detail) ? detail : detail ? [detail] : [];
+    const messages = validationErrors
+      .map((item) => {
+        if (!item || typeof item !== 'object') return undefined;
+        const error = item as { msg?: unknown; loc?: unknown[] };
+        const rawMessage = typeof error.msg === 'string'
+          ? error.msg.replace(/^Value error,\s*/i, '').trim()
+          : '';
+        if (rawMessage && rawMessage !== 'Field required') return rawMessage;
+        const field = error.loc?.[error.loc.length - 1];
+        if (field === 'username') return '아이디를 입력해 주세요.';
+        if (field === 'password' || field === 'current_password' || field === 'new_password') {
+          return '비밀번호를 올바르게 입력해 주세요.';
+        }
+        if (field === 'email') return '올바른 이메일 주소를 입력해 주세요.';
+        return rawMessage || undefined;
+      })
+      .filter((message): message is string => !!message);
+    if (messages.length) return [...new Set(messages)].join('\n');
+    return `요청을 처리하지 못했습니다. (${response.status})`;
   } catch {
     return `요청을 처리하지 못했습니다. (${response.status})`;
   }

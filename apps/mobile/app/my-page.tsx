@@ -1,9 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Keyboard, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableWithoutFeedback, View } from 'react-native';
+import { ActivityIndicator, Alert, Keyboard, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TouchableWithoutFeedback, View } from 'react-native';
 
 import { PrimaryButton } from '@/src/components/PrimaryButton';
+import { PasswordInput } from '@/src/components/PasswordInput';
 import { changePassword, deleteAccount, getCurrentUser, type CurrentUser } from '@/src/services/api';
 import { useAuthStore } from '@/src/stores/auth-store';
 
@@ -94,11 +95,11 @@ export default function MyPageScreen() {
         <Text style={styles.sectionTitle}>비밀번호 변경</Text>
         <View style={styles.card}>
           <Text style={styles.label}>현재 비밀번호</Text>
-          <TextInput value={currentPassword} onChangeText={setCurrentPassword} placeholder="현재 비밀번호를 입력해 주세요" placeholderTextColor="#7A8984" secureTextEntry autoCapitalize="none" autoCorrect={false} style={styles.input} />
+          <PasswordInput value={currentPassword} onChangeText={setCurrentPassword} placeholder="현재 비밀번호를 입력해 주세요" placeholderTextColor="#7A8984" textContentType="password" autoComplete="current-password" style={styles.passwordInput} />
           <Text style={styles.label}>새 비밀번호</Text>
-          <TextInput value={newPassword} onChangeText={setNewPassword} placeholder="영문·숫자·특수문자 포함 8자 이상" placeholderTextColor="#7A8984" secureTextEntry autoCapitalize="none" autoCorrect={false} style={styles.input} />
+          <PasswordInput value={newPassword} onChangeText={setNewPassword} placeholder="영문·숫자·특수문자 포함 8자 이상" placeholderTextColor="#7A8984" textContentType="newPassword" autoComplete="new-password" style={styles.passwordInput} />
           <Text style={styles.label}>새 비밀번호 확인</Text>
-          <TextInput value={confirmPassword} onChangeText={setConfirmPassword} placeholder="새 비밀번호를 다시 입력해 주세요" placeholderTextColor="#7A8984" secureTextEntry autoCapitalize="none" autoCorrect={false} returnKeyType="done" onSubmitEditing={() => void submitPassword()} style={styles.input} />
+          <PasswordInput value={confirmPassword} onChangeText={setConfirmPassword} placeholder="새 비밀번호를 다시 입력해 주세요" placeholderTextColor="#7A8984" textContentType="newPassword" autoComplete="new-password" returnKeyType="done" onSubmitEditing={() => void submitPassword()} style={styles.passwordInput} />
           {error && <Text style={styles.error}>{error}</Text>}
           <PrimaryButton label="비밀번호 변경" onPress={() => void submitPassword()} loading={loading} disabled={!currentPassword || !newPassword || !confirmPassword} />
         </View>
@@ -128,7 +129,7 @@ const styles = StyleSheet.create({
   sectionTitle: { marginTop: 4, color: '#14251F', fontSize: 18, fontWeight: '900' },
   card: { padding: 17, borderRadius: 18, borderWidth: 1, borderColor: '#DCE7E2', backgroundColor: '#FFFFFF' },
   label: { marginBottom: 7, color: '#263D35', fontSize: 13, fontWeight: '800' },
-  input: { marginBottom: 14, padding: 14, borderWidth: 1, borderColor: '#DCE7E2', borderRadius: 13, color: '#14251F', backgroundColor: '#FAFCFB' },
+  passwordInput: { marginBottom: 14, borderRadius: 13, backgroundColor: '#FAFCFB' },
   error: { marginBottom: 12, color: '#B42318', lineHeight: 19 },
   deleteButton: { minHeight: 50, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#FDA29B', borderRadius: 14, backgroundColor: '#FFF7F6' },
   deleteButtonPressed: { backgroundColor: '#FFE4E1' },

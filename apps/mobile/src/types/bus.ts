@@ -14,17 +14,6 @@ export type BusRouteSummary = {
   endNodeName?: string;
 };
 
-export type LiveBus = {
-  vehicleNo: string;
-  routeId: string;
-  routeNo: string;
-  latitude: number;
-  longitude: number;
-  /** 버스가 향하고 있는(직전 통과) 정류소 이름 */
-  nodeName?: string;
-  nodeOrder?: number;
-};
-
 export type BusRouteStop = BusStop & {
   order: number;
 };

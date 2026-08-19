@@ -4,7 +4,16 @@ import { useState } from 'react';
 import { Keyboard, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
 
 import { PrimaryButton } from '@/src/components/PrimaryButton';
+import { PasswordInput } from '@/src/components/PasswordInput';
 import { register, sendEmailOtp, verifyEmailOtp } from '@/src/services/api';
+
+function passwordError(password: string): string | undefined {
+  if (password.length < 8) return '비밀번호는 8자 이상이어야 합니다.';
+  if (!/[A-Za-z]/.test(password)) return '비밀번호에 영문자를 포함해야 합니다.';
+  if (!/\d/.test(password)) return '비밀번호에 숫자를 포함해야 합니다.';
+  if (!/[^A-Za-z0-9]/.test(password)) return '비밀번호에 특수문자를 포함해야 합니다.';
+  return undefined;
+}
 
 export default function RegisterScreen() {
   const router = useRouter();
@@ -37,6 +46,8 @@ export default function RegisterScreen() {
       if (!username.trim() || !password) {
         throw new Error('아이디와 비밀번호를 먼저 입력해 주세요.');
       }
+      const invalidPassword = passwordError(password);
+      if (invalidPassword) throw new Error(invalidPassword);
       const normalized = email.trim();
       await sendEmailOtp(normalized);
       setOtpSent(true);
@@ -50,6 +61,8 @@ export default function RegisterScreen() {
       if (!username.trim() || !password) {
         throw new Error('아이디와 비밀번호를 먼저 입력해 주세요.');
       }
+      const invalidPassword = passwordError(password);
+      if (invalidPassword) throw new Error(invalidPassword);
       await verifyEmailOtp(email.trim(), code.trim());
       setVerified(true);
       setMessage('이메일 인증이 완료되었습니다.');
@@ -58,6 +71,8 @@ export default function RegisterScreen() {
   const submit = () =>
     run(async () => {
       Keyboard.dismiss();
+      const invalidPassword = passwordError(password);
+      if (invalidPassword) throw new Error(invalidPassword);
       await register({ username: username.trim(), email: email.trim(), password });
       router.replace('/login' as Href);
     });
@@ -79,17 +94,14 @@ export default function RegisterScreen() {
         style={styles.input}
       />
       <Text style={styles.label}>비밀번호</Text>
-      <TextInput
+      <PasswordInput
         value={password}
         onChangeText={setPassword}
         placeholder="비밀번호 (영문·숫자·특수문자 포함 8자 이상)"
         placeholderTextColor="#7A8984"
-        secureTextEntry
-        autoCapitalize="none"
-        autoCorrect={false}
         textContentType="newPassword"
         autoComplete="new-password"
-        style={styles.input}
+        style={styles.passwordInput}
       />
       <Text style={styles.label}>이메일</Text>
       <View style={styles.row}>
@@ -164,6 +176,7 @@ const styles = StyleSheet.create({
     padding: 15,
     marginBottom: 12,
   },
+  passwordInput: { marginBottom: 12 },
   label: { color: '#263D35', fontSize: 14, fontWeight: '700', marginBottom: 7 },
   smallButton: {
     height: 50,
