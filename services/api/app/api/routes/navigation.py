@@ -5,7 +5,6 @@ from typing import Annotated
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import or_
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
@@ -19,10 +18,6 @@ from app.schemas.navigation import (
     RouteResponse,
 )
 from app.services.environment_service import fetch_disaster_zones, route_bbox
-from app.services.seeded_disaster_service import (
-    DEMO_DISASTER_TAG,
-    get_seeded_disaster_zones,
-)
 from app.services.route_service import (
     calculate_road_route,
     calculate_walking_route,
@@ -41,16 +36,12 @@ def _get_route_hazards(
     latitude_delta: float,
     longitude_delta: float,
 ) -> list[HazardReport]:
-    """검증이 끝난 일반 위험 제보만 경로 점수 계산에 사용한다."""
+    """지도에 활성화된 위험 제보를 경로 점수 계산에 사용한다."""
     return (
         db.query(HazardReport)
         .filter(
-            HazardReport.status == "verified",
+            HazardReport.status.in_(["verified", "pending"]),
             HazardReport.severity > 0,
-            or_(
-                HazardReport.detected_labels.is_(None),
-                ~HazardReport.detected_labels.like(f"{DEMO_DISASTER_TAG}%"),
-            ),
             HazardReport.latitude.between(
                 center_latitude - latitude_delta,
                 center_latitude + latitude_delta,
@@ -124,7 +115,6 @@ async def create_route(payload: RouteRequest, db: DatabaseSession) -> RouteRespo
             payload.destination.longitude,
         )
         disaster_zones = await fetch_disaster_zones(*disaster_bbox)
-        disaster_zones.extend(get_seeded_disaster_zones(db, *disaster_bbox))
         disaster_lookup_finished = perf_counter()
         result = await run_in_threadpool(
             calculate_walking_route,

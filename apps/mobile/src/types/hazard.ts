@@ -16,7 +16,6 @@ export type HazardReport = {
 export type ReportResponse = {
   report_id: string | null;
   status: HazardStatus;
-  report_message?: string | null;
   filename: string | null;
   latitude: number;
   longitude: number;

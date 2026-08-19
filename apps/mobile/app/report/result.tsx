@@ -49,7 +49,7 @@ export default function ReportResultScreen(){
         <Text style={styles.item}>{labelText[item.label]??'장애물'}</Text>
       </View>)}
       {state.result.obstacles_on_walkway===0&&<Text style={styles.item}>보행을 방해하는 위험이 감지되지 않았습니다.</Text>}
-      {!!state.result.report_message&&<Text style={styles.notSaved}>{state.result.report_message}</Text>}
+      {state.result.status==='not_saved'&&<Text style={styles.notSaved}>위험요소가 없어 사진과 위치 정보는 서버에 저장하지 않았습니다.</Text>}
       <PrimaryButton label="다른 사진 분석" onPress={()=>router.replace('/report/camera' as Href)} style={styles.button}/>
       <PrimaryButton label="홈으로" variant="dark" onPress={()=>router.replace('/' as Href)} style={styles.button}/>
     </View>}
