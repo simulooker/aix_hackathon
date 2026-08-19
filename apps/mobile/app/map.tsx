@@ -41,6 +41,7 @@ const HAZARD_LABELS: Record<string, string> = {
   mobility_aid: '이동 보조기기',
   movable_obstacle: '이동식 장애물',
   fixed_obstacle: '고정 장애물',
+  stairs: '계단',
   obstacle: '보행 방해 적치물',
   bollard: '볼라드 / 기둥',
   construction: '공사 구역',

@@ -16,10 +16,19 @@ ORS_BASE_URL = "https://api.openrouteservice.org"
 MAX_WALKING_DISTANCE_M = 10_000
 MAX_ROAD_WAYPOINTS = 25
 DISASTER_ROUTE_MESSAGE = "경로가 재난 통제구역을 포함합니다."
+STAIR_ROUTE_MESSAGE = "계단을 피해서 이동할 수 있는 휠체어 접근 경로를 찾지 못했습니다."
+STAIR_HAZARD_TYPES = {"stairs", "stair", "stairway"}
+WHEELCHAIR_BLOCKED_SLOPE_PERCENT = 12.5
+WHEELCHAIR_BLOCKED_SLOPE_DISTANCE_M = 20.0
+SLOPE_ROUTE_MESSAGE = "경사가 매우 가파른 구간을 피할 수 있는 휠체어 접근 경로를 찾지 못했습니다."
 
 
 class DisasterRouteBlocked(ValueError):
     """안전하게 우회할 수 없는 재난 통제구역이 경로에 포함된 경우입니다."""
+
+
+class AccessibilityRouteBlocked(ValueError):
+    """이용자 유형으로 통과할 수 없는 구간만 경로 후보에 남은 경우입니다."""
 
 
 @dataclass(frozen=True)
@@ -116,19 +125,59 @@ def _candidate_score(candidate: _RouteCandidate, profile: str) -> float:
         "wheelchair": 800,
     }.get(profile, 0)
 
+    ordinary_hazards = tuple(
+        item
+        for item in candidate.hazards
+        if getattr(item, "hazard_type", None) not in STAIR_HAZARD_TYPES
+    )
     risk = sum(
         max(0.0, min(1.0, float(getattr(item, "severity", 0) or 0)))
+        for item in ordinary_hazards
+    )
+    stairs = sum(
+        getattr(item, "hazard_type", None) in STAIR_HAZARD_TYPES
         for item in candidate.hazards
     )
 
-    grade_threshold = {"general": 20, "elderly": 5, "wheelchair": 3}.get(profile, 20)
-    grade_penalty = {"general": 0, "elderly": 22, "wheelchair": 40}.get(profile, 0)
+    grade_threshold = {"general": 20, "elderly": 5}.get(profile, 20)
+    grade_penalty = {"general": 0, "elderly": 22}.get(profile, 0)
     ascent_penalty = {"general": 0, "elderly": 1.5, "wheelchair": 3.0}.get(profile, 0)
 
-    slope_cost = max(0, candidate.max_grade_percent - grade_threshold) * grade_penalty
+    if profile == "wheelchair":
+        grade = max(0.0, candidate.max_grade_percent)
+        # 2~5%는 작은 불이익, 5~8.3%는 큰 불이익, 8.3% 초과는 강하게 우회한다.
+        slope_cost = max(0.0, min(grade, 5.0) - 2.0) * 10
+        slope_cost += max(0.0, min(grade, 8.3) - 5.0) * 50
+        slope_cost += max(0.0, grade - 8.3) * 120
+    else:
+        slope_cost = max(0, candidate.max_grade_percent - grade_threshold) * grade_penalty
     slope_cost += candidate.ascent_m * ascent_penalty
 
-    return candidate.distance_m + (risk * penalty_per_full_risk) + slope_cost
+    stair_cost = stairs * (50 if profile == "elderly" else 0)
+    return (
+        candidate.distance_m
+        + (risk * penalty_per_full_risk)
+        + slope_cost
+        + stair_cost
+    )
+
+
+def _contains_stairs(candidate: _RouteCandidate) -> bool:
+    return any(
+        getattr(item, "hazard_type", None) in STAIR_HAZARD_TYPES
+        for item in candidate.hazards
+    )
+
+
+def _contains_blocked_wheelchair_slope(candidate: _RouteCandidate) -> bool:
+    """측정 오차를 줄이기 위해 12.5% 이상이 20m 이상 지속될 때만 차단한다."""
+    return any(
+        abs(float(segment.get("grade_percent", 0)))
+        >= WHEELCHAIR_BLOCKED_SLOPE_PERCENT
+        and float(segment.get("distance_m", 0))
+        >= WHEELCHAIR_BLOCKED_SLOPE_DISTANCE_M
+        for segment in candidate.slope_segments
+    )
 
 
 def _select_candidate(
@@ -137,6 +186,18 @@ def _select_candidate(
     """최적 경로 선택"""
     if not candidates:
         raise ValueError("후보 경로가 없습니다.")
+    if profile == "wheelchair":
+        original_candidates = candidates
+        candidates = [
+            item
+            for item in candidates
+            if not _contains_stairs(item)
+            and not _contains_blocked_wheelchair_slope(item)
+        ]
+        if not candidates and all(_contains_stairs(item) for item in original_candidates):
+            raise AccessibilityRouteBlocked(STAIR_ROUTE_MESSAGE)
+        if not candidates:
+            raise AccessibilityRouteBlocked(SLOPE_ROUTE_MESSAGE)
     shortest = min(candidates, key=lambda item: item.distance_m)
 
     if profile == "general":
@@ -189,6 +250,9 @@ def _filter_hazards_for_profile(
     if profile == "elderly":
         avoid_list = []
         for h in hazards:
+            # 계단은 ORS에 강제 회피 영역으로 보내지 않고 정확히 50m 점수만 더한다.
+            if getattr(h, "hazard_type", None) in STAIR_HAZARD_TYPES:
+                continue
             sev = float(getattr(h, "severity", 0) or 0)
             # 위험도가 높거나(medium 이상) 파손/공사 등의 심각한 요소는 즉시 회피
             if sev >= 0.6:
@@ -306,12 +370,14 @@ def _slope_metrics(
             grade = (current_elevation - start_elevation) / window_distance * 100
             max_grade = max(max_grade, abs(grade))
             absolute_grade = abs(grade)
-            if absolute_grade >= 5:
+            if absolute_grade >= 2:
                 level = (
-                    "very_steep"
-                    if absolute_grade >= 12
+                    "blocked"
+                    if absolute_grade >= WHEELCHAIR_BLOCKED_SLOPE_PERCENT
+                    else "very_steep"
+                    if absolute_grade >= 8.3
                     else "steep"
-                    if absolute_grade >= 8
+                    if absolute_grade >= 5
                     else "moderate"
                 )
                 segments.append(
@@ -319,6 +385,7 @@ def _slope_metrics(
                         "start_index": window_start,
                         "end_index": index,
                         "grade_percent": round(grade, 1),
+                        "distance_m": round(window_distance, 1),
                         "level": level,
                     }
                 )
@@ -571,7 +638,7 @@ def calculate_walking_route(
                             response.status_code,
                             response.text,
                         )
-                except DisasterRouteBlocked:
+                except (DisasterRouteBlocked, AccessibilityRouteBlocked):
                     raise
                 except Exception as exc:
                     last_exception = exc
@@ -581,7 +648,7 @@ def calculate_walking_route(
             raise last_exception
         raise ValueError("보행 경로를 탐색하지 못했습니다.")
 
-    except DisasterRouteBlocked:
+    except (DisasterRouteBlocked, AccessibilityRouteBlocked):
         raise
     except Exception as exc:  # noqa: BLE001
         logger.error("❌ OpenRouteService 처리 중 에러 발생: %s", exc)

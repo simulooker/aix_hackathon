@@ -54,9 +54,9 @@ export default function NavigationScreen() {
   const isBusRoute = route.travel_mode === 'bus' && !!route.transit_legs?.length;
   const maxGrade = route.max_grade_percent ?? 0;
   const maxGradeDegrees = Math.atan(maxGrade / 100) * 180 / Math.PI;
-  const slopeLevel = maxGrade >= 12 ? 'verySteep' : maxGrade >= 8 ? 'steep' : 'moderate';
-  const slopeLabel = slopeLevel === 'verySteep' ? '매우 힘듦' : slopeLevel === 'steep' ? '힘듦' : '주의';
-  const slopeIconColor = slopeLevel === 'verySteep' ? '#B42318' : slopeLevel === 'steep' ? '#B54708' : '#9A6700';
+  const slopeLevel = maxGrade >= 12.5 ? 'blocked' : maxGrade >= 8.3 ? 'verySteep' : maxGrade >= 5 ? 'steep' : 'moderate';
+  const slopeLabel = slopeLevel === 'blocked' ? '통행 곤란 추정' : slopeLevel === 'verySteep' ? '매우 힘듦' : slopeLevel === 'steep' ? '힘듦' : '주의';
+  const slopeIconColor = slopeLevel === 'blocked' ? '#292524' : slopeLevel === 'verySteep' ? '#B42318' : slopeLevel === 'steep' ? '#B54708' : '#9A6700';
 
   return (
     <SafeAreaView style={styles.container}>
@@ -76,18 +76,19 @@ export default function NavigationScreen() {
           {!isBusRoute && <View style={styles.voiceRow}><MaterialCommunityIcons name={guidance.voiceEnabled ? 'volume-high' : 'volume-off'} size={21} color="#263D35" /><Text style={styles.voiceText}>음성</Text><Switch value={guidance.voiceEnabled} onValueChange={guidance.setVoiceEnabled} trackColor={{ false: '#CBD5D1', true: '#8BC8B1' }} thumbColor={guidance.voiceEnabled ? '#167C5A' : '#FFF'} /></View>}
         </View>
 
-        {maxGrade >= 5 && (
+        {maxGrade >= 2 && (
           <View style={[
             styles.slopeNotice,
             slopeLevel === 'steep' && styles.slopeNoticeSteep,
             slopeLevel === 'verySteep' && styles.slopeNoticeDanger,
+            slopeLevel === 'blocked' && styles.slopeNoticeBlocked,
           ]}>
             <MaterialCommunityIcons name="slope-uphill" size={23} color={slopeIconColor} />
             <View style={styles.slopeTextWrap}>
-              <Text style={[styles.slopeTitle, slopeLevel === 'steep' && styles.slopeTitleSteep, slopeLevel === 'verySteep' && styles.slopeTitleDanger]}>
+              <Text style={[styles.slopeTitle, slopeLevel === 'steep' && styles.slopeTitleSteep, slopeLevel === 'verySteep' && styles.slopeTitleDanger, slopeLevel === 'blocked' && styles.slopeTitleBlocked]}>
                 경사 구간 {slopeLabel} · 최대 약 {maxGradeDegrees.toFixed(1)}° ({maxGrade.toFixed(1)}%)
               </Text>
-              <Text style={styles.slopeBody}>지도 선은 약 50m씩 나눈 고도 기반 추정값입니다. 짧은 턱이나 급경사는 현장에서 다시 확인해 주세요.</Text>
+              <Text style={styles.slopeBody}>지도 선은 약 20~50m씩 나눈 고도 기반 추정값입니다. 짧은 턱이나 급경사는 현장에서 다시 확인해 주세요.</Text>
             </View>
           </View>
         )}
@@ -150,7 +151,8 @@ const styles = StyleSheet.create({
   slopeNotice: { flexDirection: 'row', alignItems: 'center', gap: 9, padding: 10, borderRadius: 12, backgroundColor: '#FFF8E1', borderWidth: 1, borderColor: '#F0D58C' },
   slopeNoticeSteep: { backgroundColor: '#FFF4E5', borderColor: '#FDBA74' },
   slopeNoticeDanger: { backgroundColor: '#FFF1F0', borderColor: '#FDA29B' },
-  slopeTextWrap: { flex: 1 }, slopeTitle: { color: '#6B4F00', fontSize: 13, fontWeight: '900' }, slopeTitleSteep: { color: '#9A4600' }, slopeTitleDanger: { color: '#B42318' }, slopeBody: { marginTop: 2, color: '#6F6651', fontSize: 10, lineHeight: 14 },
+  slopeNoticeBlocked: { backgroundColor: '#F5F5F4', borderColor: '#78716C' },
+  slopeTextWrap: { flex: 1 }, slopeTitle: { color: '#6B4F00', fontSize: 13, fontWeight: '900' }, slopeTitleSteep: { color: '#9A4600' }, slopeTitleDanger: { color: '#B42318' }, slopeTitleBlocked: { color: '#292524' }, slopeBody: { marginTop: 2, color: '#6F6651', fontSize: 10, lineHeight: 14 },
   disasterNotice: { padding: 9, borderRadius: 10, color: '#B42318', backgroundColor: '#FFF1F0', fontSize: 12, fontWeight: '800' },
   itinerary: { maxHeight: 300 }, itineraryContent: { gap: 8, paddingBottom: 5 },
   legCard: { flexDirection: 'row', alignItems: 'center', gap: 11, padding: 11, borderRadius: 14, backgroundColor: '#F0F7F4', borderWidth: 1, borderColor: '#D6E7E0' },

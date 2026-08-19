@@ -17,7 +17,8 @@ class SlopeSegment(BaseModel):
     start_index: int
     end_index: int
     grade_percent: float
-    level: Literal["moderate", "steep", "very_steep"]
+    distance_m: float = 0
+    level: Literal["moderate", "steep", "very_steep", "blocked"]
 
 
 class RouteRequest(BaseModel):

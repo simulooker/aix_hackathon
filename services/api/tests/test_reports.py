@@ -293,6 +293,44 @@ def test_fixed_obstacle_is_active_on_first_report(monkeypatch) -> None:
     assert result.is_active is True
 
 
+def test_stairs_are_saved_for_profile_routing_without_general_risk(monkeypatch) -> None:
+    stairs_analysis = hazard_analysis("stairs", risk="none")
+    stairs_analysis["obstacles_on_walkway"] = 0
+    monkeypatch.setattr(
+        reports,
+        "get_ai_service",
+        lambda: SimpleNamespace(analyze=lambda _contents: stairs_analysis),
+    )
+
+    async def fake_upload(*_args, **_kwargs):
+        return "reports/stairs.jpg"
+
+    monkeypatch.setattr(reports, "upload_report_image", fake_upload)
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        result = asyncio.run(
+            reports.create_report(
+                image=UploadFile(
+                    file=BytesIO(b"image"),
+                    filename="stairs.jpg",
+                    headers=Headers({"content-type": "image/jpeg"}),
+                ),
+                latitude=35.16,
+                longitude=126.85,
+                db=db,
+                _current_user=SimpleNamespace(username="tester"),
+            )
+        )
+        stored = db.query(HazardReport).one()
+
+    assert result.report_id is not None
+    assert result.is_active is True
+    assert result.overall_risk == "none"
+    assert stored.hazard_type == "stairs"
+    assert stored.severity == 0.25
+
+
 def test_missing_report_image_returns_404() -> None:
     response = TestClient(app).get(f"/api/v1/reports/{uuid4()}/image")
 

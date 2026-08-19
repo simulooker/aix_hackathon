@@ -28,6 +28,7 @@ from app.services.storage_service import download_report_image, upload_report_im
 router = APIRouter(prefix="/reports", tags=["reports"])
 RISK_SEVERITY = {"none": 0.0, "low": 0.25, "medium": 0.6, "high": 1.0}
 TRANSIENT_HAZARD_LABELS = {"motor_vehicle", "two_wheeler"}
+ROUTING_ONLY_HAZARD_LABELS = {"stairs"}
 REPORT_CONFIRMATION_RADIUS_M = 5.0
 REPORT_CONFIRMATION_DIRECTION_DEGREES = 30.0
 MINIMUM_HEADING_ACCURACY = 2
@@ -137,12 +138,22 @@ async def create_report(
     reportable_on_walkway = [
         item
         for item in analysis["detections"]
-        if item["on_walkway"] and item["risk"] != "none"
+        if item["on_walkway"]
+        and (
+            item["risk"] != "none"
+            or item["label"] in ROUTING_ONLY_HAZARD_LABELS
+        )
     ]
     has_reportable_hazard = (
         analysis["walkway_detected"]
-        and analysis["overall_risk"] != "none"
         and bool(reportable_on_walkway)
+        and (
+            analysis["overall_risk"] != "none"
+            or any(
+                item["label"] in ROUTING_ONLY_HAZARD_LABELS
+                for item in reportable_on_walkway
+            )
+        )
     )
     if not has_reportable_hazard:
         return ReportResponse(
@@ -182,6 +193,10 @@ async def create_report(
         default=None,
     )
     labels = sorted({item["label"] for item in reportable_on_walkway})
+    stored_severity = max(
+        RISK_SEVERITY[analysis["overall_risk"]],
+        0.25 if set(labels) & ROUTING_ONLY_HAZARD_LABELS else 0.0,
+    )
     requires_confirmation = bool(labels) and set(labels).issubset(
         TRANSIENT_HAZARD_LABELS
     )
@@ -208,7 +223,7 @@ async def create_report(
         confidence=max(
             (item["confidence"] for item in reportable_on_walkway), default=None
         ),
-        severity=RISK_SEVERITY[analysis["overall_risk"]],
+        severity=stored_severity,
         overall_risk=analysis["overall_risk"],
         detected_labels=",".join(labels) or None,
         photo_path=photo_path,

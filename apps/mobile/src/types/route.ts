@@ -9,7 +9,8 @@ export type SlopeSegment = {
   start_index: number;
   end_index: number;
   grade_percent: number;
-  level: 'moderate' | 'steep' | 'very_steep';
+  distance_m?: number;
+  level: 'moderate' | 'steep' | 'very_steep' | 'blocked';
 };
 
 export type TransitLeg = {

@@ -11,11 +11,11 @@ const riskText: Record<RiskLevel,string>={none:'위험요소 없음',low:'낮은
 const riskColor: Record<RiskLevel,string>={none:'#167C5A',low:'#3B7A57',medium:'#B7791F',high:'#B42318'};
 const labelText: Record<string,string>={
   person:'보행자',motor_vehicle:'차량',two_wheeler:'자전거·이륜차',mobility_aid:'이동 보조기구',
-  movable_obstacle:'이동식 장애물',fixed_obstacle:'고정 장애물',
+  movable_obstacle:'이동식 장애물',fixed_obstacle:'고정 장애물',stairs:'계단',
 };
 const labelColor: Record<string,string>={
   person:'#2563EB',motor_vehicle:'#DC2626',two_wheeler:'#EA580C',mobility_aid:'#7C3AED',
-  movable_obstacle:'#D97706',fixed_obstacle:'#475569',
+  movable_obstacle:'#D97706',fixed_obstacle:'#475569',stairs:'#7C2D12',
 };
 
 export default function ReportResultScreen(){
@@ -23,6 +23,7 @@ export default function ReportResultScreen(){
   useEffect(()=>{if(uri&&latitude&&longitude) void submit(uri,Number(latitude),Number(longitude),heading==null?undefined:Number(heading),headingAccuracy==null?undefined:Number(headingAccuracy));},[uri,latitude,longitude,heading,headingAccuracy,submit]);
   const visibleDetections=state.status==='success'?state.result.detections:[];
   const detectedKinds=[...new Map(visibleDetections.map(item=>[item.label,item])).values()];
+  const hasStairs=visibleDetections.some(item=>item.label==='stairs');
   return <SafeAreaView style={styles.safe}><ScrollView contentContainerStyle={styles.container}>
     {uri&&<View style={styles.imageFrame}>
       <Image source={{uri}} style={styles.image}/>
@@ -42,13 +43,14 @@ export default function ReportResultScreen(){
     </View>}
     {state.status==='submitting'&&<View style={styles.box}><Text style={styles.title}>AI가 보행환경을 분석하고 있습니다.</Text><Text style={styles.analysisTime}>사진 분석에는 약 1분 정도가 소요됩니다.</Text><PrimaryButton label="분석 중" onPress={()=>{}} loading style={styles.button}/></View>}
     {state.status==='success'&&<View style={styles.box}>
-      <Text style={[styles.risk,{color:riskColor[state.result.overall_risk]}]}>{riskText[state.result.overall_risk]}</Text>
+      <Text style={[styles.risk,{color:riskColor[state.result.overall_risk]}]}>{hasStairs&&state.result.overall_risk==='none'?'계단이 감지되었습니다':riskText[state.result.overall_risk]}</Text>
       <Text style={styles.body}>감지된 객체</Text>
       {detectedKinds.map(item=><View key={item.label} style={styles.legendItem}>
         <View style={[styles.legendSwatch,{backgroundColor:labelColor[item.label]??'#B42318'}]}/>
-        <Text style={styles.item}>{labelText[item.label]??'장애물'}{item.label==='person'?' · 위험도 미반영':''}</Text>
+        <Text style={styles.item}>{labelText[item.label]??'장애물'}{item.label==='person'?' · 위험도 미반영':item.label==='stairs'?' · 이용자 유형에 따라 경로 반영':''}</Text>
       </View>)}
-      {state.result.obstacles_on_walkway===0&&<Text style={styles.item}>보행을 방해하는 위험이 감지되지 않았습니다.</Text>}
+      {state.result.obstacles_on_walkway===0&&!hasStairs&&<Text style={styles.item}>보행을 방해하는 위험이 감지되지 않았습니다.</Text>}
+      {hasStairs&&<Text style={styles.item}>계단은 이용자 유형에 따라 안전 경로에 다르게 반영됩니다.</Text>}
       {state.result.report_id==null&&<Text style={styles.notSaved}>위험요소가 없어 사진과 위치 정보는 서버에 저장하지 않았습니다.</Text>}
       {state.result.report_id!=null&&!state.result.is_active&&<Text style={styles.notSaved}>사진은 저장되었습니다. 5m 이내에서 같은 방향의 동일한 위험요소가 한 번 더 제보되면 지도와 안전 경로에 반영됩니다.</Text>}
       <PrimaryButton label="다른 사진 분석" onPress={()=>router.replace('/report/camera' as Href)} style={styles.button}/>

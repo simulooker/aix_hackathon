@@ -167,9 +167,10 @@ export function KakaoMap({
   <div id="status">카카오 지도를 불러오는 중입니다.</div>
   <div id="map"></div>
   <div id="slope-legend">
-    <div class="slope-item"><span class="slope-chip" style="background:#FACC15"></span>주의 · 약 2.9~4.6° (5~8%)</div>
-    <div class="slope-item"><span class="slope-chip" style="background:#F79009"></span>힘듦 · 약 4.6~6.8° (8~12%)</div>
-    <div class="slope-item"><span class="slope-chip" style="background:#D92D20"></span>매우 힘듦 · 약 6.8° 이상 (12%+)</div>
+    <div class="slope-item"><span class="slope-chip" style="background:#FACC15"></span>주의 · 약 1.1~2.9° (2~5%)</div>
+    <div class="slope-item"><span class="slope-chip" style="background:#F79009"></span>힘듦 · 약 2.9~4.8° (5~8.3%)</div>
+    <div class="slope-item"><span class="slope-chip" style="background:#D92D20"></span>매우 힘듦 · 약 4.8~7.1° (8.3~12.5%)</div>
+    <div class="slope-item"><span class="slope-chip" style="background:#292524"></span>통행 곤란 추정 · 약 7.1° 이상 (12.5%+)</div>
   </div>
   <script>
     const data = ${data};
@@ -423,13 +424,15 @@ export function KakaoMap({
             const gradePercent = hasElevation
               ? Math.abs(lastElevation - firstElevation) / distance * 100
               : 0;
-            const color = !hasElevation || gradePercent < 5
+            const color = !hasElevation || gradePercent < 2
               ? '#167C5A'
-              : gradePercent < 8
+              : gradePercent < 5
               ? '#FACC15'
-              : gradePercent < 12
+              : gradePercent < 8.3
               ? '#F79009'
-              : '#D92D20';
+              : gradePercent < 12.5
+              ? '#D92D20'
+              : '#292524';
             const blockPath = selected.map(function (point) {
               return new kakao.maps.LatLng(point.latitude, point.longitude);
             });

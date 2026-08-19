@@ -8,6 +8,7 @@ from typing import Any
 from app.core.config import settings
 
 WALKABLE_CLASSES = {"sidewalk", "alley", "crosswalk", "bike_lane"}
+STAIR_CLASSES = {"stairs"}
 RISK_ORDER = {"none": 0, "low": 1, "medium": 2, "high": 3}
 
 
@@ -108,6 +109,10 @@ class AIService:
             return "none"
         if label == "person":
             return "none"
+        if label in STAIR_CLASSES:
+            # 계단의 실제 위험도는 이용자 유형에 따라 경로 계산 단계에서 결정한다.
+            # 사진 분석 자체에서는 일반 보행 위험으로 단정하지 않는다.
+            return "none"
 
         # The bottom of a detected box is a useful monocular distance proxy.
         # Far-away objects should contribute less than objects near the user.
@@ -152,8 +157,8 @@ class AIService:
             )[0]
         mask = self._mask(surface, *image.shape[:2])
         detections: list[dict[str, Any]] = []
+        height, width = image.shape[:2]
         if obstacles.boxes is not None:
-            height, width = image.shape[:2]
             for box, class_id, confidence in zip(
                 obstacles.boxes.xyxy.int().cpu().tolist(),
                 obstacles.boxes.cls.int().cpu().tolist(),
@@ -181,12 +186,47 @@ class AIService:
                         ),
                     }
                 )
+        stair_detections = 0
+        if surface.boxes is not None:
+            for box, class_id, confidence in zip(
+                surface.boxes.xyxy.int().cpu().tolist(),
+                surface.boxes.cls.int().cpu().tolist(),
+                surface.boxes.conf.cpu().tolist(),
+            ):
+                label = surface.names[class_id]
+                if label not in STAIR_CLASSES or float(confidence) < 0.35:
+                    continue
+                x1, y1, x2, y2 = box
+                blocked = min(1.0, max(0, x2 - x1) / max(1, width))
+                proximity = min(1.0, max(0.0, y2 / max(1, height)))
+                detections.append(
+                    {
+                        "label": label,
+                        "confidence": round(float(confidence), 4),
+                        "box": (
+                            round(x1 / width, 5),
+                            round(y1 / height, 5),
+                            round(x2 / width, 5),
+                            round(y2 / height, 5),
+                        ),
+                        "blocked_walkway_ratio": round(blocked, 4),
+                        "remaining_walkway_image_ratio": round(
+                            max(0.0, 1.0 - blocked), 4
+                        ),
+                        "proximity": round(proximity, 4),
+                        "on_walkway": True,
+                        "risk": self._risk(
+                            label, True, blocked, max(0.0, 1.0 - blocked), proximity
+                        ),
+                    }
+                )
+                stair_detections += 1
         risk = max(
             (item["risk"] for item in detections), key=RISK_ORDER.get, default="none"
         )
         return {
             "model_ready": True,
-            "walkway_detected": bool(mask.any()),
+            "walkway_detected": bool(mask.any()) or stair_detections > 0,
             "overall_risk": risk,
             "obstacles_detected": len(detections),
             "obstacles_on_walkway": sum(

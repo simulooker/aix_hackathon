@@ -72,3 +72,10 @@ def test_person_never_contributes_to_risk() -> None:
         )
         == "none"
     )
+
+
+def test_stairs_are_informational_before_profile_routing() -> None:
+    assert (
+        AIService._risk("stairs", True, blocked=0.8, remaining=0.1, proximity=0.9)
+        == "none"
+    )
