@@ -33,13 +33,23 @@ import type { HazardReport } from '@/src/types/hazard';
 import type { RoutePoint } from '@/src/types/route';
 
 const EMPTY_STOPS: BusStop[] = [];
+
 const HAZARD_LABELS: Record<string, string> = {
   person: '보행자',
-  motor_vehicle: '차량',
-  two_wheeler: '자전거·오토바이',
+  motor_vehicle: '주정차 / 통행 차량',
+  two_wheeler: '자전거 · 오토바이',
   mobility_aid: '이동 보조기기',
   movable_obstacle: '이동식 장애물',
   fixed_obstacle: '고정 장애물',
+  obstacle: '보행 방해 적치물',
+  bollard: '볼라드 / 기둥',
+  construction: '공사 구역',
+  damaged_sidewalk: '보도 파손',
+};
+
+const getHazardLabel = (type?: string | null) => {
+  if (!type) return '보행 위험 요소';
+  return HAZARD_LABELS[type] ?? type;
 };
 
 export default function MapScreen() {
@@ -63,6 +73,7 @@ export default function MapScreen() {
   } = useRouteStore();
 
   const [hazards, setHazards] = useState<HazardReport[]>([]);
+  const [selectedHazard, setSelectedHazard] = useState<HazardReport | null>(null);
   const [environment, setEnvironment] = useState<EnvironmentContext>();
   const [travelMode, setTravelMode] = useState<'walk' | 'bus'>('walk');
   const [origin, setOrigin] = useState<RoutePoint>();
@@ -77,13 +88,13 @@ export default function MapScreen() {
   const [searchResults, setSearchResults] = useState<KakaoPlace[]>([]);
   const [accountMenuVisible, setAccountMenuVisible] = useState(false);
   const [recenterRequest, setRecenterRequest] = useState(0);
+  const [panelHeight, setPanelHeight] = useState(0);
   const [mapViewport, setMapViewport] = useState<MapViewport>();
   const mapViewportRef = useRef<MapViewport | undefined>(undefined);
   mapViewportRef.current = mapViewport;
   const locationRef = useRef(coordinates);
   locationRef.current = coordinates;
-  const [selectedHazard, setSelectedHazard] = useState<HazardReport>();
-  const [panelHeight, setPanelHeight] = useState(0);
+
   const profilePromptShown = useRef(false);
   const busErrorShown = useRef(false);
 
@@ -96,10 +107,8 @@ export default function MapScreen() {
     showLiveBuses && mapViewport?.level != null && mapViewport.level <= 4,
   );
 
-  // 매 렌더마다 새 배열을 넘기면 지도 WebView 가 불필요하게 다시 그려진다.
   const visibleBusStops = useMemo(() => (showLiveBuses ? busStops : EMPTY_STOPS), [busStops, showLiveBuses]);
 
-  // 안내 화면에서 뒤로 돌아와 메인 지도로 복귀할 때 이전 경로선 초기화
   useFocusEffect(
     useCallback(() => {
       if (clearRoute) clearRoute();
@@ -127,7 +136,7 @@ export default function MapScreen() {
           if (!cancelled) setHazards(items);
         })
         .catch(() => {
-          // 일시적인 네트워크 오류 때 기존 마커를 지우지 않아 깜빡임을 방지한다.
+          // 일시적인 네트워크 오류 시 기존 마커 깜빡임 방지
         });
     }, 300);
     return () => {
@@ -183,7 +192,7 @@ export default function MapScreen() {
     Keyboard.dismiss();
     setDestination(point);
     setMapCenter(point);
-    if (clearRoute) clearRoute(); // 새 목적지 선택 시 이전 경로선 즉시 삭제
+    if (clearRoute) clearRoute();
 
     if (label && label !== '지도에서 선택한 위치') {
       setDestinationName(label);
@@ -283,6 +292,15 @@ export default function MapScreen() {
     );
   }
 
+  // 이미지 URL 획득 헬퍼 (photo_path가 전체 URL이면 그대로 사용, 아니면 ID 기반 API URL 생성)
+  const getImageUrl = (hazard?: HazardReport | null) => {
+    if (!hazard) return undefined;
+    if (hazard.photo_path && hazard.photo_path.startsWith('http')) {
+      return hazard.photo_path;
+    }
+    return getReportImageUrl ? getReportImageUrl(hazard.id) : undefined;
+  };
+
   return (
     <View style={styles.container}>
       <KakaoMap
@@ -296,9 +314,9 @@ export default function MapScreen() {
         route={route?.geometry}
         transitLegs={route?.transit_legs}
         busStops={visibleBusStops}
-        onMapPress={(point) => chooseDestination(point, '지도에서 선택한 위치')}
+        onHazardPress={(hazard) => setSelectedHazard(hazard)}
         onViewportChange={setMapViewport}
-        onHazardPress={setSelectedHazard}
+        onMapPress={(point) => chooseDestination(point, '지도에서 선택한 위치')}
         searchRequest={searchRequest}
         onSearchResults={(results) => {
           setSearching(false);
@@ -311,45 +329,6 @@ export default function MapScreen() {
         }}
         recenterRequest={recenterRequest}
       />
-
-      <Modal
-        visible={!!selectedHazard}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setSelectedHazard(undefined)}>
-        <Pressable style={styles.hazardBackdrop} onPress={() => setSelectedHazard(undefined)}>
-          <Pressable style={styles.hazardCard} onPress={(event) => event.stopPropagation()}>
-            <View style={styles.hazardModalHeader}>
-              <View>
-                <Text style={styles.hazardModalTitle}>위험 제보</Text>
-                <Text style={styles.hazardModalType}>
-                  {selectedHazard?.hazard_type
-                    ? HAZARD_LABELS[selectedHazard.hazard_type] ?? '위험 요소'
-                    : '위험 요소'}
-                </Text>
-              </View>
-              <Pressable onPress={() => setSelectedHazard(undefined)} hitSlop={10}>
-                <Ionicons name="close" size={25} color="#40534C" />
-              </Pressable>
-            </View>
-            {selectedHazard?.photo_path ? (
-              <Image
-                source={{ uri: getReportImageUrl(selectedHazard.id) }}
-                style={styles.hazardPhoto}
-                resizeMode="cover"
-              />
-            ) : (
-              <View style={styles.hazardPhotoEmpty}>
-                <Ionicons name="image-outline" size={30} color="#71817B" />
-                <Text style={styles.hazardPhotoEmptyText}>저장된 제보 사진이 없습니다.</Text>
-              </View>
-            )}
-            <Text style={styles.hazardModalDetail}>
-              위험도 {Math.round((selectedHazard?.severity ?? 0) * 100)}%
-            </Text>
-          </Pressable>
-        </Pressable>
-      </Modal>
 
       <SafeAreaView style={styles.topArea} pointerEvents="box-none">
         <View style={[styles.topRow, { paddingTop: insets.top + 10 }]}>
@@ -440,6 +419,61 @@ export default function MapScreen() {
           </ScrollView>
         )}
       </SafeAreaView>
+
+      {/* ⚠️ 위험 지점 상세 정보 및 사진 모달 */}
+      <Modal
+        visible={!!selectedHazard}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSelectedHazard(null)}>
+        <Pressable style={styles.hazardModalBackdrop} onPress={() => setSelectedHazard(null)}>
+          <Pressable style={styles.hazardModalContent} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.hazardModalHeader}>
+              <View style={styles.hazardModalTitleWrap}>
+                <Ionicons name="warning" size={20} color="#D92D20" />
+                <Text style={styles.hazardModalTitle}>보행 위험 제보 현장</Text>
+              </View>
+              <Pressable onPress={() => setSelectedHazard(null)} hitSlop={10}>
+                <Ionicons name="close" size={24} color="#65756F" />
+              </Pressable>
+            </View>
+
+            <View style={styles.hazardTypeRow}>
+              <Text style={styles.hazardTypeBadge}>
+                {getHazardLabel(selectedHazard?.hazard_type)}
+              </Text>
+              <Text style={styles.hazardSeverityText}>
+                위험도 {Math.round((selectedHazard?.severity ?? 0) * 100)}%
+              </Text>
+            </View>
+
+            {getImageUrl(selectedHazard) ? (
+              <Image
+                source={{ uri: getImageUrl(selectedHazard) }}
+                style={styles.hazardPhoto}
+                resizeMode="cover"
+              />
+            ) : (
+              <View style={styles.hazardNoPhoto}>
+                <Ionicons name="image-outline" size={32} color="#8A9893" />
+                <Text style={styles.hazardNoPhotoText}>등록된 현장 사진이 없습니다.</Text>
+              </View>
+            )}
+
+            <View style={styles.hazardDetails}>
+              <Text style={styles.hazardDateText}>
+                제보 일시: {selectedHazard?.created_at ? new Date(selectedHazard.created_at).toLocaleString('ko-KR') : '-'}
+              </Text>
+            </View>
+
+            <Pressable
+              style={styles.hazardCloseButton}
+              onPress={() => setSelectedHazard(null)}>
+              <Text style={styles.hazardCloseButtonText}>확인</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       <Modal visible={accountMenuVisible} transparent animationType="fade" onRequestClose={() => setAccountMenuVisible(false)}>
         <Pressable style={styles.menuBackdrop} onPress={() => setAccountMenuVisible(false)}>
@@ -606,15 +640,6 @@ const styles = StyleSheet.create({
   weatherAlertDanger: { borderColor: '#FDA29B', backgroundColor: '#FFF1F0' },
   weatherAlertLine: { flex: 1, color: '#5E5541', fontSize: 11, lineHeight: 15 },
   weatherAlertTitle: { color: '#6B4F00', fontSize: 11, fontWeight: '900' },
-  hazardBackdrop: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: 'rgba(12, 28, 22, 0.46)' },
-  hazardCard: { width: '100%', maxWidth: 420, padding: 16, borderRadius: 20, backgroundColor: '#FFFFFF', elevation: 14, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 16 },
-  hazardModalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
-  hazardModalTitle: { color: '#14251F', fontSize: 19, fontWeight: '900' },
-  hazardModalType: { marginTop: 2, color: '#B42318', fontSize: 13, fontWeight: '800' },
-  hazardPhoto: { width: '100%', aspectRatio: 4 / 3, borderRadius: 14, backgroundColor: '#E7EFEB' },
-  hazardPhotoEmpty: { width: '100%', aspectRatio: 4 / 3, alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 14, backgroundColor: '#EEF3F0' },
-  hazardPhotoEmptyText: { color: '#71817B', fontSize: 13, fontWeight: '700' },
-  hazardModalDetail: { marginTop: 11, color: '#596A64', fontSize: 13, fontWeight: '700' },
   menuBackdrop: { flex: 1, backgroundColor: 'rgba(12, 28, 22, 0.28)' },
   accountMenu: { position: 'absolute', right: 14, width: 232, padding: 10, borderRadius: 18, backgroundColor: '#FFFFFF', elevation: 12, shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 14 },
   menuHeader: { flexDirection: 'row', alignItems: 'center', gap: 11, padding: 9 },
@@ -713,4 +738,100 @@ const styles = StyleSheet.create({
   travelModeText: { color: '#40534C', fontSize: 13, fontWeight: '800' },
   travelModeTextActive: { color: '#FFFFFF' },
   error: { color: '#B42318', fontSize: 12 },
+
+  /* ⚠️ 위험 모달 전용 스타일 */
+  hazardModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  hazardModalContent: {
+    width: '100%',
+    maxWidth: 340,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 18,
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+  },
+  hazardModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  hazardModalTitleWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  hazardModalTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#D92D20',
+  },
+  hazardTypeRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  hazardTypeBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#FEE4E2',
+    color: '#D92D20',
+    fontSize: 13,
+    fontWeight: '700',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  hazardSeverityText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#596A64',
+  },
+  hazardPhoto: {
+    width: '100%',
+    height: 200,
+    borderRadius: 12,
+    backgroundColor: '#F2F4F7',
+    marginBottom: 12,
+  },
+  hazardNoPhoto: {
+    width: '100%',
+    height: 140,
+    borderRadius: 12,
+    backgroundColor: '#F2F4F7',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 12,
+  },
+  hazardNoPhotoText: {
+    fontSize: 12,
+    color: '#8A9893',
+  },
+  hazardDetails: {
+    marginBottom: 16,
+  },
+  hazardDateText: {
+    fontSize: 12,
+    color: '#71817B',
+  },
+  hazardCloseButton: {
+    backgroundColor: '#167C5A',
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  hazardCloseButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '800',
+  },
 });

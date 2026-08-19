@@ -23,7 +23,8 @@ class HazardReport(Base):
         String(10), nullable=False, default="none"
     )
     detected_labels: Mapped[str | None] = mapped_column(Text, nullable=True)
-    photo_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # photo_path 변수가 Supabase DB의 'image_url' 컬럼을 가리키도록 수정
+    photo_path: Mapped[str | None] = mapped_column("image_url", Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

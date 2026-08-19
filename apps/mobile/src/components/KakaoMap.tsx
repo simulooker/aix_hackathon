@@ -66,8 +66,7 @@ export function KakaoMap({
   const [mapError, setMapError] = useState<string>();
   const webViewRef = useRef<WebView>(null);
 
-  // 버스정류장 데이터가 바뀌어도 HTML 을 다시 만들지 않고 지도에 주입만 한다.
-  // (HTML 을 새로 만들면 WebView 가 통째로 리로드되어 지도가 깜빡인다.)
+  // 데이터 변경 시 웹뷰 전체 리로드를 막고 자바스크립트 주입으로 부드럽게 갱신
   const busPayloadRef = useRef({ stops: busStops });
   busPayloadRef.current = { stops: busStops };
   const hazardPayloadRef = useRef(hazards);
@@ -153,8 +152,8 @@ export function KakaoMap({
     .bus-stop{width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:9px;
       background:#fff;border:2px solid #1f6feb;box-shadow:0 2px 5px rgba(0,0,0,.3);cursor:pointer;font-size:17px;line-height:1}
     .bus-tip{padding:5px 8px;font:12px sans-serif;white-space:nowrap}
-    .hazard-marker{width:12px;height:12px;padding:0;border:1.5px solid #fff;border-radius:50%;
-      box-shadow:0 1px 4px rgba(0,0,0,.3);cursor:pointer}
+    .hazard-marker{width:16px;height:16px;padding:0;border:2px solid #fff;border-radius:50%;
+      box-shadow:0 2px 5px rgba(0,0,0,.35);cursor:pointer;display:block}
     .disaster-pin{max-width:170px;padding:5px 9px;border:2px solid #fff;border-radius:13px;background:#b42318;color:#fff;
       box-shadow:0 2px 7px rgba(0,0,0,.32);font:800 11px/1.25 -apple-system,BlinkMacSystemFont,sans-serif;text-align:center}
     #slope-legend{position:fixed;top:12px;left:12px;z-index:20;display:none;flex-direction:column;gap:4px;
@@ -174,6 +173,8 @@ export function KakaoMap({
   <script>
     const data = ${data};
     const status = document.getElementById('status');
+    let isOverlayClick = false;
+
     function send(type, payload) {
       window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({ type, ...payload }));
     }
@@ -184,8 +185,6 @@ export function KakaoMap({
     }
     window.onerror = function(message) { fail('지도 실행 오류: ' + message); };
 
-    // 버스정류장 오버레이 레이어.
-    // React Native 쪽에서 window.__withyouBus.setStops 로 갱신한다.
     function createBusLayer(map) {
       const tip = new kakao.maps.InfoWindow({ removable: true });
       let stopOverlays = [];
@@ -210,8 +209,10 @@ export function KakaoMap({
             const element = document.createElement('div');
             element.className = 'bus-stop';
             element.textContent = '🚌';
-            element.addEventListener('click', function () {
+            element.addEventListener('click', function (e) {
+              isOverlayClick = true;
               openTip(position, escapeHtml(stop.name));
+              setTimeout(function() { isOverlayClick = false; }, 200);
             });
             return new kakao.maps.CustomOverlay({
               map: map.getLevel() <= 4 ? map : null, position: position, content: element,
@@ -250,19 +251,21 @@ export function KakaoMap({
             element.title = '위험 제보 보기';
             element.style.background = color;
             element.addEventListener('click', function (event) {
+              isOverlayClick = true;
               event.stopPropagation();
               send('hazardPress', { hazardId: hazard.id });
+              setTimeout(function() { isOverlayClick = false; }, 200);
             });
             overlays[hazard.id] = {
               element: element,
               overlay: new kakao.maps.CustomOverlay({
-              map: map.getLevel() <= 5 ? map : null,
-              position: position,
-              content: element,
-              xAnchor: 0.5,
-              yAnchor: 0.5,
-              zIndex: 6,
-              clickable: true
+                map: map.getLevel() <= 5 ? map : null,
+                position: position,
+                content: element,
+                xAnchor: 0.5,
+                yAnchor: 0.5,
+                zIndex: 6,
+                clickable: true
               })
             };
           });
@@ -301,9 +304,11 @@ export function KakaoMap({
       const overlay = new kakao.maps.CustomOverlay({ content: wrapper, map: null, zIndex: 10, yAnchor: 0.72, xAnchor: 0.5 });
       content.addEventListener('click', function () {
         if (!position) return;
+        isOverlayClick = true;
         const info = new kakao.maps.InfoWindow({ content: '<div style="padding:5px 8px;white-space:nowrap;font-size:12px">현재 위치</div>' });
         info.setPosition(position);
         info.open(map);
+        setTimeout(function() { isOverlayClick = false; }, 200);
       });
       return {
         setLocation: function (latitude, longitude) {
@@ -433,6 +438,7 @@ export function KakaoMap({
         }
 
         kakao.maps.event.addListener(map, 'click', function (event) {
+          if (isOverlayClick) return;
           const point = event.latLng;
           send('press', { latitude: point.getLat(), longitude: point.getLng() });
         });
@@ -443,6 +449,7 @@ export function KakaoMap({
         send('busLayerReady', {});
         send('hazardLayerReady', {});
         send('locationLayerReady', {});
+
         function sendViewport() {
           const mapCenter = map.getCenter();
           send('viewport', {
@@ -513,7 +520,6 @@ export function KakaoMap({
               return;
             }
 
-            // No nearby result: retry once without radius/location restrictions.
             places.keywordSearch(data.searchRequest.query, function (nationwideResults, nationwideStatus) {
               if (nationwideStatus === kakao.maps.services.Status.OK) {
                 sendRankedResults(nationwideResults);
@@ -557,7 +563,6 @@ export function KakaoMap({
       if (message.type === 'ready') {
         setMapError(undefined);
       } else if (message.type === 'busLayerReady') {
-        // 지도 HTML 이 다시 만들어지면 버스 오버레이가 사라지므로 현재 상태를 다시 밀어넣는다.
         pushBusLayer(busPayloadRef.current);
       } else if (message.type === 'hazardLayerReady') {
         pushHazardLayer(hazardPayloadRef.current);
