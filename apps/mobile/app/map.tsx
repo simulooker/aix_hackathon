@@ -346,6 +346,7 @@ export default function MapScreen() {
         onHazardPress={(hazard) => setSelectedHazard(hazard)}
         onViewportChange={setMapViewport}
         onMapPress={(point) => chooseDestination(point, '지도에서 선택한 위치')}
+        onMapLongPress={(point) => chooseOrigin(point, '지도에서 선택한 출발지')}
         searchRequest={searchRequest}
         onSearchResults={(results) => {
           setSearching(false);

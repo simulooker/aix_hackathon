@@ -17,6 +17,7 @@ type KakaoMapProps = {
   route?: RoutePoint[];
   busStops?: BusStop[];
   onMapPress?: (point: RoutePoint) => void;
+  onMapLongPress?: (point: RoutePoint) => void;
   onViewportChange?: (viewport: MapViewport) => void;
   onHazardPress?: (hazard: HazardReport) => void;
   searchRequest?: { query: string; requestId: number };
@@ -53,6 +54,7 @@ export function KakaoMap({
   route = [],
   busStops = [],
   onMapPress,
+  onMapLongPress,
   onViewportChange,
   onHazardPress,
   searchRequest,
@@ -456,8 +458,50 @@ export function KakaoMap({
           map.setBounds(bounds, 40, 40, 40, 40);
         }
 
+        let suppressMapClickUntil = 0;
+        const mapContainer = document.getElementById('map');
+        let longPressTimer;
+        let longPressStart;
+
+        function cancelLongPress() {
+          if (longPressTimer) clearTimeout(longPressTimer);
+          longPressTimer = undefined;
+          longPressStart = undefined;
+        }
+
+        mapContainer.addEventListener('pointerdown', function (event) {
+          if (event.button != null && event.button !== 0) return;
+          const target = event.target;
+          if (target && target.closest && target.closest('button,.hazard-touch-box,.bus-stop')) return;
+          cancelLongPress();
+          longPressStart = { x: event.clientX, y: event.clientY };
+          longPressTimer = setTimeout(function () {
+            if (!longPressStart || hazardClickLock) return;
+            const bounds = mapContainer.getBoundingClientRect();
+            const containerPoint = new kakao.maps.Point(
+              longPressStart.x - bounds.left,
+              longPressStart.y - bounds.top
+            );
+            const point = map.getProjection().coordsFromContainerPoint(containerPoint);
+            suppressMapClickUntil = Date.now() + 1000;
+            if (navigator.vibrate) navigator.vibrate(35);
+            send('longPress', { latitude: point.getLat(), longitude: point.getLng() });
+            cancelLongPress();
+          }, 700);
+        }, true);
+
+        mapContainer.addEventListener('pointermove', function (event) {
+          if (!longPressStart) return;
+          if (Math.hypot(event.clientX - longPressStart.x, event.clientY - longPressStart.y) > 10) {
+            cancelLongPress();
+          }
+        }, true);
+        mapContainer.addEventListener('pointerup', cancelLongPress, true);
+        mapContainer.addEventListener('pointercancel', cancelLongPress, true);
+        kakao.maps.event.addListener(map, 'dragstart', cancelLongPress);
+
         kakao.maps.event.addListener(map, 'click', function (event) {
-          if (hazardClickLock) return;
+          if (hazardClickLock || Date.now() < suppressMapClickUntil) return;
           const point = event.latLng;
           send('press', { latitude: point.getLat(), longitude: point.getLng() });
         });
@@ -591,6 +635,8 @@ export function KakaoMap({
         setMapError((message as { message?: string }).message ?? '카카오 지도를 불러오지 못했습니다.');
       } else if (message.type === 'press' && message.latitude != null && message.longitude != null) {
         onMapPress?.({ latitude: message.latitude, longitude: message.longitude });
+      } else if (message.type === 'longPress' && message.latitude != null && message.longitude != null) {
+        onMapLongPress?.({ latitude: message.latitude, longitude: message.longitude });
       } else if (message.type === 'viewport' && message.latitude != null && message.longitude != null && message.level != null) {
         onViewportChange?.({
           center: { latitude: message.latitude, longitude: message.longitude },
