@@ -12,7 +12,6 @@ logger = logging.getLogger(__name__)
 
 ORS_API_KEY = settings.ors_api_key or ""
 
-# ORS 공식 v2 기본 엔드포인트
 ORS_BASE_URL = "https://api.openrouteservice.org"
 MAX_WALKING_DISTANCE_M = 10_000
 MAX_ROAD_WAYPOINTS = 25
@@ -110,46 +109,55 @@ def _distance_to_segment_m(
 
 
 def _candidate_score(candidate: _RouteCandidate, profile: str) -> float:
-    """테스트 코드 및 위험도 평가를 위한 스코어 함수"""
+    """후보 경로 스코어링"""
     penalty_per_full_risk = {
-        "general": 140,
-        "elderly": 300,
-        "wheelchair": 600,
-    }.get(profile, 140)
+        "general": 0,
+        "elderly": 250,
+        "wheelchair": 800,
+    }.get(profile, 0)
+
     risk = sum(
         max(0.0, min(1.0, float(getattr(item, "severity", 0) or 0)))
         for item in candidate.hazards
     )
-    grade_threshold = {"general": 10, "elderly": 5, "wheelchair": 3}.get(profile, 10)
-    grade_penalty = {"general": 8, "elderly": 22, "wheelchair": 35}.get(profile, 8)
-    ascent_penalty = {"general": 0.2, "elderly": 1.5, "wheelchair": 2.5}.get(
-        profile, 0.2
-    )
+
+    grade_threshold = {"general": 20, "elderly": 5, "wheelchair": 3}.get(profile, 20)
+    grade_penalty = {"general": 0, "elderly": 22, "wheelchair": 40}.get(profile, 0)
+    ascent_penalty = {"general": 0, "elderly": 1.5, "wheelchair": 3.0}.get(profile, 0)
+
     slope_cost = max(0, candidate.max_grade_percent - grade_threshold) * grade_penalty
     slope_cost += candidate.ascent_m * ascent_penalty
-    return candidate.distance_m + risk * penalty_per_full_risk + slope_cost
+
+    return candidate.distance_m + (risk * penalty_per_full_risk) + slope_cost
 
 
 def _select_candidate(
     candidates: list[_RouteCandidate], profile: str, prefer_safe_route: bool
 ) -> tuple[_RouteCandidate, int]:
-    """CI 테스트(test_route_service.py) 호환 및 최적 경로 선택 함수"""
+    """최적 경로 선택"""
     if not candidates:
         raise ValueError("후보 경로가 없습니다.")
     shortest = min(candidates, key=lambda item: item.distance_m)
+
+    if profile == "general":
+        return shortest, 0
+
     has_safety_signal = any(
         item.hazards or item.max_grade_percent > 0 for item in candidates
     )
     if not prefer_safe_route or not has_safety_signal:
         return shortest, 0
-    max_detour_ratio = {"general": 1.12, "elderly": 1.22, "wheelchair": 1.35}.get(
-        profile, 1.12
-    )
+
+    # 노약자는 최대 20% 우회 허용, 휠체어는 최대 50%까지 크게 우회 허용
+    max_detour_ratio = {"elderly": 1.20, "wheelchair": 1.50}.get(profile, 1.12)
     reasonable = [
         item
         for item in candidates
         if item.distance_m <= shortest.distance_m * max_detour_ratio
     ]
+    if not reasonable:
+        reasonable = candidates
+
     selected = min(reasonable, key=lambda item: _candidate_score(item, profile))
     logger.info(
         "Route candidates profile=%s shortest=%sm selected=%sm hazards(shortest=%s selected=%s) scores=%s",
@@ -161,6 +169,44 @@ def _select_candidate(
         [round(_candidate_score(item, profile), 1) for item in reasonable],
     )
     return selected, max(0, len(shortest.hazards) - len(selected.hazards))
+
+
+def _filter_hazards_for_profile(
+    hazards: list[Any], profile: str
+) -> list[Any]:
+    """
+    사용자 유형별 차등 회피 필터링:
+    - wheelchair: 모든 제보 위험 요소를 회피 대상으로 지정
+    - elderly: 심각도가 높거나(>=0.6) 밀집된 구역만 선별 회피 (1~2개 가벼운 위험은 통과)
+    - general: 회피 대상 없음
+    """
+    if not hazards or profile == "general":
+        return []
+
+    if profile == "wheelchair":
+        return list(hazards)
+
+    if profile == "elderly":
+        avoid_list = []
+        for h in hazards:
+            sev = float(getattr(h, "severity", 0) or 0)
+            # 위험도가 높거나(medium 이상) 파손/공사 등의 심각한 요소는 즉시 회피
+            if sev >= 0.6:
+                avoid_list.append(h)
+                continue
+            
+            # 위험도가 낮더라도 주변 40m 내에 위험 요소가 3개 이상 뭉쳐 있으면(밀집 구역) 회피
+            h_lat = getattr(h, "latitude", 0)
+            h_lon = getattr(h, "longitude", 0)
+            nearby_count = sum(
+                1 for other in hazards
+                if distance_meters(h_lat, h_lon, getattr(other, "latitude", 0), getattr(other, "longitude", 0)) <= 40
+            )
+            if nearby_count >= 3:
+                avoid_list.append(h)
+        return avoid_list
+
+    return []
 
 
 def _parse_ors_candidates(
@@ -223,7 +269,7 @@ def _slope_metrics(
 ) -> tuple[float, float, float, tuple[dict[str, Any], ...]]:
     elevations = [point.get("elevation") for point in geometry]
     if not any(value is not None for value in elevations):
-        return 0, 0, 0, ()
+        return 0.0, 0.0, 0.0, ()
 
     ascent = 0.0
     descent = 0.0
@@ -287,8 +333,12 @@ def _slope_metrics(
     )
 
 
-def _avoid_polygons(zones: list[DisasterZone]) -> dict[str, Any] | None:
+def _avoid_polygons(
+    zones: list[DisasterZone], hazards: list[Any] | None = None
+) -> dict[str, Any] | None:
     polygons: list[list[list[list[float]]]] = []
+
+    # 1. 재난 통제구역 회피
     for zone in zones:
         latitude_radius = zone.radius_m / 111_320
         longitude_radius = zone.radius_m / max(
@@ -303,6 +353,29 @@ def _avoid_polygons(zones: list[DisasterZone]) -> dict[str, Any] | None:
         ]
         ring.append(ring[0])
         polygons.append([ring])
+
+    # 2. 프로필에 맞게 필터링된 위험 지점 회피
+    if hazards:
+        for hazard in hazards:
+            h_lat = getattr(hazard, "latitude", None)
+            h_lon = getattr(hazard, "longitude", None)
+            if h_lat is None or h_lon is None:
+                continue
+
+            h_radius_m = 15.0
+            lat_r = h_radius_m / 111_320
+            lon_r = h_radius_m / max(1, 111_320 * cos(radians(h_lat)))
+
+            ring = [
+                [
+                    h_lon + lon_r * cos(2 * pi * i / 8),
+                    h_lat + lat_r * sin(2 * pi * i / 8),
+                ]
+                for i in range(8)
+            ]
+            ring.append(ring[0])
+            polygons.append([ring])
+
     return {"type": "MultiPolygon", "coordinates": polygons} if polygons else None
 
 
@@ -355,7 +428,6 @@ def calculate_road_route(points: list[Any]) -> RouteResult:
     }
     body = {
         "coordinates": coordinates,
-        # 오래된 정류장 좌표가 도로에서 지나치게 멀면 잘못된 직선을 만들지 않고 실패시킵니다.
         "radiuses": [350] * len(coordinates),
         "instructions": False,
         "preference": "fastest",
@@ -406,8 +478,6 @@ def calculate_walking_route(
             zone.longitude,
         ) <= zone.radius_m:
             raise DisasterRouteBlocked(DISASTER_ROUTE_MESSAGE)
-    ors_profile = "wheelchair" if profile == "wheelchair" else "foot-walking"
-    url = f"{ORS_BASE_URL}/v2/directions/{ors_profile}/geojson"
 
     raw_key = (ORS_API_KEY or "").strip()
     if not raw_key:
@@ -423,7 +493,7 @@ def calculate_walking_route(
             [float(origin.longitude), float(origin.latitude)],
             [float(destination.longitude), float(destination.latitude)],
         ],
-        "radiuses": [-1, -1],
+        "radiuses": [800, 800],
         "elevation": True,
         "extra_info": ["steepness"],
         "alternative_routes": {
@@ -432,51 +502,84 @@ def calculate_walking_route(
             "share_factor": 0.6,
         },
     }
-    avoid_polygons = _avoid_polygons(disaster_zones)
+
+    # 사용자 유형별로 회피 대상 위험 요소 선별
+    hazards_to_avoid = _filter_hazards_for_profile(hazards, profile)
+    avoid_polygons = _avoid_polygons(disaster_zones, hazards_to_avoid)
     if avoid_polygons:
         body["options"] = {"avoid_polygons": avoid_polygons}
 
+    profiles_to_try = (
+        ["wheelchair", "foot-walking"] if profile == "wheelchair" else ["foot-walking"]
+    )
+
+    last_exception = None
+
     try:
         with httpx.Client(timeout=15.0) as client:
-            response = client.post(
-                url,
-                headers=headers,
-                json=body,
-            )
-            # 일부 ORS 프로필/계정은 대안 경로 옵션을 지원하지 않는다. 이 경우
-            # 재난 회피 옵션은 유지하고 대안 경로만 제거해 한 번 더 요청한다.
-            if response.status_code in {400, 404, 422} and "alternative_routes" in body:
-                retry_body = dict(body)
-                retry_body.pop("alternative_routes", None)
-                response = client.post(url, headers=headers, json=retry_body)
-            if response.status_code != 200:
-                logger.error(
-                    "❌ ORS API 호출 실패 [%s]: %s",
-                    response.status_code,
-                    response.text,
-                )
-            response.raise_for_status()
-            candidates = _parse_ors_candidates(response.json(), hazards)
+            for current_profile in profiles_to_try:
+                url = f"{ORS_BASE_URL}/v2/directions/{current_profile}/geojson"
+                try:
+                    response = client.post(url, headers=headers, json=body)
 
-        selected, avoided_count = _select_candidate(
-            candidates, profile, prefer_safe_route
-        )
-        if _route_intersects_disaster_zone(selected.geometry, disaster_zones):
-            raise DisasterRouteBlocked(DISASTER_ROUTE_MESSAGE)
+                    if response.status_code in {400, 404, 422} and "alternative_routes" in body:
+                        retry_body = dict(body)
+                        retry_body.pop("alternative_routes", None)
+                        response = client.post(url, headers=headers, json=retry_body)
 
-        return RouteResult(
-            geometry=selected.geometry,
-            distance_m=selected.distance_m,
-            hazards_avoided=avoided_count,
-            hazards_on_route=selected.hazards,
-            used_fallback=False,
-            ascent_m=selected.ascent_m,
-            descent_m=selected.descent_m,
-            max_grade_percent=selected.max_grade_percent,
-            slope_segments=selected.slope_segments,
-            disaster_zones_avoided=len(disaster_zones),
-            disaster_zones=tuple(disaster_zones),
-        )
+                    if response.status_code in {400, 404, 422} and hazards_to_avoid:
+                        relaxed_body = dict(body)
+                        relaxed_polygons = _avoid_polygons(disaster_zones, None)
+                        if relaxed_polygons:
+                            relaxed_body["options"] = {"avoid_polygons": relaxed_polygons}
+                        else:
+                            relaxed_body.pop("options", None)
+                        relaxed_body.pop("alternative_routes", None)
+                        response = client.post(url, headers=headers, json=relaxed_body)
+
+                    if response.status_code in {400, 404, 422} and body.get("radiuses") != [-1, -1]:
+                        no_radius_body = dict(body)
+                        no_radius_body["radiuses"] = [-1, -1]
+                        no_radius_body.pop("alternative_routes", None)
+                        response = client.post(url, headers=headers, json=no_radius_body)
+
+                    if response.status_code == 200:
+                        candidates = _parse_ors_candidates(response.json(), hazards)
+                        selected, avoided_count = _select_candidate(
+                            candidates, profile, prefer_safe_route
+                        )
+                        if _route_intersects_disaster_zone(selected.geometry, disaster_zones):
+                            raise DisasterRouteBlocked(DISASTER_ROUTE_MESSAGE)
+
+                        return RouteResult(
+                            geometry=selected.geometry,
+                            distance_m=selected.distance_m,
+                            hazards_avoided=avoided_count,
+                            hazards_on_route=selected.hazards,
+                            used_fallback=False,
+                            ascent_m=selected.ascent_m,
+                            descent_m=selected.descent_m,
+                            max_grade_percent=selected.max_grade_percent,
+                            slope_segments=selected.slope_segments,
+                            disaster_zones_avoided=len(disaster_zones),
+                            disaster_zones=tuple(disaster_zones),
+                        )
+                    else:
+                        logger.warning(
+                            "ORS %s 요청 실패 [%s]: %s",
+                            current_profile,
+                            response.status_code,
+                            response.text,
+                        )
+                except DisasterRouteBlocked:
+                    raise
+                except Exception as exc:
+                    last_exception = exc
+                    continue
+
+        if last_exception:
+            raise last_exception
+        raise ValueError("보행 경로를 탐색하지 못했습니다.")
 
     except DisasterRouteBlocked:
         raise
