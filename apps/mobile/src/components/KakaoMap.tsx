@@ -379,7 +379,6 @@ export function KakaoMap({
         marker(data.origin, '출발지');
         marker(data.destination, '목적지');
 
-        // 재난 통제 구역 표식 (파선 원 + 삼각 경고 오버레이)
         data.disasters.forEach(function (disaster) {
           const position = new kakao.maps.LatLng(disaster.latitude, disaster.longitude);
           const color = disaster.kind === 'landslide' ? '#7A271A' : '#B42318';
@@ -432,10 +431,31 @@ export function KakaoMap({
           return 6371000 * 2 * Math.atan2(Math.sqrt(value), Math.sqrt(1 - value));
         }
 
+        // 💡 [핵심 개선] 고도 스무딩(Moving Average) 및 20m 정밀 구간 경사도 렌더링
         function drawSlopeRoute(points, strokeStyle) {
           if (!points || points.length < 2) return;
-          let block = [points[0]];
+
+          // 1. 3구간 이동 평균으로 위성 고도 노이즈 제거
+          const smoothed = points.map(function (pt, idx) {
+            let sum = 0;
+            let count = 0;
+            for (let k = Math.max(0, idx - 1); k <= Math.min(points.length - 1, idx + 1); k++) {
+              const elev = Number(points[k].elevation);
+              if (Number.isFinite(elev)) {
+                sum += elev;
+                count++;
+              }
+            }
+            return {
+              latitude: pt.latitude,
+              longitude: pt.longitude,
+              elevation: count > 0 ? sum / count : pt.elevation
+            };
+          });
+
+          let block = [smoothed[0]];
           let blockDistance = 0;
+
           function drawBlock(selected, distance) {
             if (selected.length < 2) return;
             const firstElevation = Number(selected[0].elevation);
@@ -456,13 +476,22 @@ export function KakaoMap({
             const blockPath = selected.map(function (point) {
               return new kakao.maps.LatLng(point.latitude, point.longitude);
             });
-            new kakao.maps.Polyline({ map: map, path: blockPath, strokeWeight: 6, strokeColor: color, strokeOpacity: 0.96, strokeStyle: strokeStyle });
+            new kakao.maps.Polyline({
+              map: map,
+              path: blockPath,
+              strokeWeight: 6,
+              strokeColor: color,
+              strokeOpacity: 0.96,
+              strokeStyle: strokeStyle
+            });
           }
-          for (let index = 1; index < points.length; index += 1) {
-            const point = points[index];
-            blockDistance += horizontalDistance(points[index - 1], point);
+
+          // 2. 50m 대신 20m 단위로 정밀 분할하여 급경사 희석 및 반전 방지
+          for (let index = 1; index < smoothed.length; index += 1) {
+            const point = smoothed[index];
+            blockDistance += horizontalDistance(smoothed[index - 1], point);
             block.push(point);
-            if (blockDistance >= 50 || index === points.length - 1) {
+            if (blockDistance >= 20 || index === smoothed.length - 1) {
               drawBlock(block, blockDistance);
               block = [point];
               blockDistance = 0;
