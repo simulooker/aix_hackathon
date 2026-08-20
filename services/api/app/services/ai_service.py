@@ -8,7 +8,7 @@ from typing import Any
 from app.core.config import settings
 
 WALKABLE_CLASSES = {"sidewalk", "alley", "crosswalk", "bike_lane"}
-STAIR_CLASSES = {"stairs"}
+STAIR_CLASSES = {"stairs", "stair", "stairway"}
 RISK_ORDER = {"none": 0, "low": 1, "medium": 2, "high": 3}
 
 
@@ -63,12 +63,15 @@ class AIService:
         x1, y1, x2, y2 = box
         x1, x2 = max(0, x1), min(width, x2)
         y1, y2 = max(0, y1), min(height, y2)
-        y1 = max(y1, y2 - max(3, round(max(1, y2 - y1) * 0.15)))
-        contact = mask[y1:y2, x1:x2]
+        
+        # 바닥 접촉면 계산
+        contact_y1 = max(y1, y2 - max(3, round(max(1, y2 - y1) * 0.20)))
+        contact = mask[contact_y1:y2, x1:x2]
         overlap = float(contact.sum()) / max(1, contact.size)
+        
         blocked_rows: list[float] = []
         remaining_rows: list[float] = []
-        for row in mask[y1:y2]:
+        for row in mask[contact_y1:y2]:
             walkable = np.flatnonzero(row)
             if not walkable.size:
                 continue
@@ -85,8 +88,8 @@ class AIService:
             blocked = max(0, min(x2, corridor_x2) - max(x1, corridor_x1))
             total = corridor_x2 - corridor_x1
             if blocked:
-                blocked_rows.append(blocked / total)
-                remaining_rows.append(max(0, total - blocked) / width)
+                blocked_rows.append(blocked / max(1, total))
+                remaining_rows.append(max(0, total - blocked) / max(1, width))
         return (
             overlap,
             float(np.median(blocked_rows)) if blocked_rows else 0.0,
@@ -103,28 +106,37 @@ class AIService:
         proximity: float = 1.0,
         box_width_ratio: float = 0.0,
     ) -> str:
-        if not on_walkway or label == "person" or label in STAIR_CLASSES:
-            return "none"
-
-        distance_factor = min(1.0, max(0.25, (proximity - 0.30) / 0.55))
-        effective_blocked = blocked * distance_factor
-
-        # 1. 갓길 객체 (물체 폭이 좁거나 통행로가 넉넉히 남아있는 경우 무조건 통과)
-        # 장애물 하나의 너비가 화면의 35% 미만이면 통행 공간이 충분하므로 위험 없음 처리
-        if box_width_ratio < 0.35 and effective_blocked < 0.60:
-            return "none"
-
-        # 2. 남은 보행로가 화면의 10% 이상이면 정상 통행
-        if remaining >= 0.10 and effective_blocked < 0.50:
-            return "none"
-
-        # 3. 도로를 실제로 완전히 틀어막은 경우에만 위험 판정
-        # 도로 전체의 60% 이상을 틀어막고 남은 폭이 거의 없을 때만 high
-        if effective_blocked >= 0.60 and remaining < 0.06:
+        if label in STAIR_CLASSES:
             return "high"
 
-        if effective_blocked >= 0.45:
+        if label == "person":
+            return "none"
+
+        # 보행로 위가 아니더라도 근접한 대형 차량/장애물은 위험 고려
+        if not on_walkway and proximity < 0.6:
+            return "none"
+
+        distance_factor = min(1.0, max(0.40, (proximity - 0.25) / 0.55))
+        effective_blocked = blocked * distance_factor
+
+        # 💡 차량/오토바이/적치물은 골목 폭을 35% 이상 차지하거나 근접해 있으면 즉시 위험 산정
+        if label in {"motor_vehicle", "car", "truck", "bus", "two_wheeler", "movable_obstacle", "fixed_obstacle", "obstacle", "construction"}:
+            if effective_blocked >= 0.45 or box_width_ratio >= 0.35:
+                return "high"
+            if effective_blocked >= 0.20 or box_width_ratio >= 0.20:
+                return "medium"
+            if on_walkway and proximity >= 0.50:
+                return "low"
+
+        # 일반 장애물 판정
+        if effective_blocked >= 0.50 or (remaining < 0.12 and box_width_ratio >= 0.25):
+            return "high"
+
+        if effective_blocked >= 0.25:
             return "medium"
+
+        if on_walkway and proximity >= 0.60:
+            return "low"
 
         return "none"
 
@@ -141,11 +153,15 @@ class AIService:
                 image, conf=0.25, device=settings.ai_device, verbose=False
             )[0]
             obstacles = self.obstacle_model.predict(
-                image, conf=0.40, device=settings.ai_device, verbose=False
+                image, conf=0.35, device=settings.ai_device, verbose=False
             )[0]
+            
         mask = self._mask(surface, *image.shape[:2])
         detections: list[dict[str, Any]] = []
         height, width = image.shape[:2]
+
+        total_vehicle_width_ratio = 0.0
+        vehicle_count = 0
 
         # 1. 장애물 모델 객체 검출
         if obstacles.boxes is not None:
@@ -155,9 +171,22 @@ class AIService:
                 obstacles.boxes.conf.cpu().tolist(),
             ):
                 overlap, blocked, remaining, proximity = self._measure(mask, box)
-                on_walkway = overlap >= 0.25
                 label = obstacles.names[class_id]
                 box_width_ratio = (box[2] - box[0]) / max(1, width)
+                on_walkway = overlap >= 0.15 or proximity >= 0.65
+
+                if label in {"motor_vehicle", "car", "truck", "bus"}:
+                    total_vehicle_width_ratio += box_width_ratio
+                    vehicle_count += 1
+
+                item_risk = self._risk(
+                    label,
+                    on_walkway,
+                    blocked,
+                    remaining,
+                    proximity,
+                    box_width_ratio,
+                )
 
                 detections.append(
                     {
@@ -173,14 +202,7 @@ class AIService:
                         "remaining_walkway_image_ratio": round(remaining, 4),
                         "proximity": round(proximity, 4),
                         "on_walkway": on_walkway,
-                        "risk": self._risk(
-                            label,
-                            on_walkway,
-                            blocked,
-                            remaining,
-                            proximity,
-                            box_width_ratio,
-                        ),
+                        "risk": item_risk,
                     }
                 )
 
@@ -193,7 +215,7 @@ class AIService:
                 surface.boxes.conf.cpu().tolist(),
             ):
                 label = surface.names[class_id]
-                if label not in STAIR_CLASSES or float(confidence) < 0.35:
+                if label not in STAIR_CLASSES or float(confidence) < 0.30:
                     continue
                 x1, y1, x2, y2 = box
                 blocked = min(1.0, max(0, x2 - x1) / max(1, width))
@@ -216,17 +238,23 @@ class AIService:
                         ),
                         "proximity": round(proximity, 4),
                         "on_walkway": True,
-                        "risk": self._risk(
-                            label,
-                            True,
-                            blocked,
-                            max(0.0, 1.0 - blocked),
-                            proximity,
-                            box_width_ratio,
-                        ),
+                        "risk": "high",  # 💡 계단은 무조건 고위험(통행불가) 판정
                     }
                 )
                 stair_detections += 1
+
+        # 💡 [핵심] 골목길 양측 주정차(다중 차량) 종합 판정
+        # 차량이 2대 이상이거나, 화면 가로의 40% 이상을 차량이 차지한 경우 종합 위험도를 'high' 또는 'medium'으로 승격
+        if vehicle_count >= 2 and total_vehicle_width_ratio >= 0.40:
+            for item in detections:
+                if item["label"] in {"motor_vehicle", "car", "truck", "bus"}:
+                    if RISK_ORDER[item["risk"]] < RISK_ORDER["high"]:
+                        item["risk"] = "high"
+        elif vehicle_count >= 2 and total_vehicle_width_ratio >= 0.25:
+            for item in detections:
+                if item["label"] in {"motor_vehicle", "car", "truck", "bus"}:
+                    if RISK_ORDER[item["risk"]] < RISK_ORDER["medium"]:
+                        item["risk"] = "medium"
 
         risk = max(
             (item["risk"] for item in detections), key=RISK_ORDER.get, default="none"
@@ -237,7 +265,7 @@ class AIService:
             "overall_risk": risk,
             "obstacles_detected": len(detections),
             "obstacles_on_walkway": sum(
-                item["on_walkway"] and item["risk"] != "none"
+                item["risk"] != "none"
                 for item in detections
             ),
             "detections": detections,

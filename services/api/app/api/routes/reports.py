@@ -28,9 +28,11 @@ from app.services.storage_service import download_report_image, upload_report_im
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
-RISK_SEVERITY = {"none": 0.0, "low": 0.25, "medium": 0.6, "high": 1.0}
-TRANSIENT_HAZARD_LABELS = {"motor_vehicle", "two_wheeler"}
-ROUTING_ONLY_HAZARD_LABELS = {"stairs"}
+RISK_SEVERITY = {"none": 0.0, "low": 0.3, "medium": 0.6, "high": 1.0}
+TRANSIENT_HAZARD_LABELS = {
+    "motor_vehicle", "car", "truck", "bus", "two_wheeler", "movable_obstacle"
+}
+ROUTING_ONLY_HAZARD_LABELS = {"stairs", "stair", "stairway"}
 
 # 시간 정책: 1회당 6시간, 48시간(2일) 이상 누적 시 영구 위험 전환
 BASE_HOURS = 6
@@ -93,26 +95,27 @@ async def create_report(
     except AIModelUnavailable as exc:
         raise HTTPException(503, str(exc)) from exc
 
-    reportable_on_walkway = [
+    # 💡 1. 사람이 아닌 검출 객체 중 유의미한 장애물 선별 (야간 골목길 보행로 미인식 예외 해결)
+    reportable_obstacles = [
         item
         for item in analysis["detections"]
-        if item["on_walkway"]
+        if item["label"] != "person"
         and (
             item["risk"] != "none"
+            or item["on_walkway"]
             or item["label"] in ROUTING_ONLY_HAZARD_LABELS
+            or item["label"] in TRANSIENT_HAZARD_LABELS
         )
     ]
+
     has_reportable_hazard = (
-        analysis["walkway_detected"]
-        and bool(reportable_on_walkway)
+        bool(reportable_obstacles)
         and (
             analysis["overall_risk"] != "none"
-            or any(
-                item["label"] in ROUTING_ONLY_HAZARD_LABELS
-                for item in reportable_on_walkway
-            )
+            or bool(reportable_obstacles)
         )
     )
+
     if not has_reportable_hazard:
         return ReportResponse(
             report_id=None,
@@ -146,22 +149,23 @@ async def create_report(
         ) from exc
 
     most_serious = max(
-        reportable_on_walkway,
-        key=lambda item: RISK_SEVERITY[item["risk"]],
-        default=None,
+        reportable_obstacles,
+        key=lambda item: RISK_SEVERITY.get(item["risk"], 0.0),
+        default=reportable_obstacles[0] if reportable_obstacles else None,
     )
-    labels = sorted({item["label"] for item in reportable_on_walkway})
+    labels = sorted({item["label"] for item in reportable_obstacles})
+    
+    calculated_risk = analysis["overall_risk"]
+    if calculated_risk == "none" and reportable_obstacles:
+        calculated_risk = "medium"
+
     stored_severity = max(
-        RISK_SEVERITY[analysis["overall_risk"]],
-        0.25 if set(labels) & ROUTING_ONLY_HAZARD_LABELS else 0.0,
+        RISK_SEVERITY.get(calculated_risk, 0.6),
+        0.3 if set(labels) & ROUTING_ONLY_HAZARD_LABELS else 0.0,
     )
 
-    is_severity_sufficient = (
-        stored_severity >= 0.25 or bool(set(labels) & ROUTING_ONLY_HAZARD_LABELS)
-    )
-    is_active = is_severity_sufficient
-
-    primary_hazard = most_serious["label"] if most_serious else None
+    is_active = stored_severity >= 0.25 or bool(set(labels) & ROUTING_ONLY_HAZARD_LABELS)
+    primary_hazard = most_serious["label"] if most_serious else "obstacle"
     now = datetime.now(timezone.utc)
 
     # 1. 동일 위치(10m 이내)에 활성화되어 있는 이전 제보 검색
@@ -182,7 +186,6 @@ async def create_report(
     for old_rep in nearby_active_reports:
         if _distance_meters(latitude, longitude, old_rep.latitude, old_rep.longitude) <= SEARCH_RADIUS_M:
             matching_existing_report = old_rep
-            # 과거 제보는 지도에 중복으로 뜨지 않도록 비활성화
             old_rep.is_active = False
 
     # 2. 이동성 장애물(차량/오토바이) 시간 및 누적 처리
@@ -196,16 +199,12 @@ async def create_report(
             total_hours = BASE_HOURS * report_count
 
             if total_hours >= PERMANENT_HOURS:
-                # 48시간 이상 누적: 영구 위험으로 전환 (만료 없음)
                 expires_at = None
             else:
-                # 48시간 미만: 현재 시각 기준 시간 연장
                 expires_at = now + timedelta(hours=total_hours)
         else:
-            # 최초 제보: 기본 6시간 부여
             expires_at = now + timedelta(hours=BASE_HOURS)
     else:
-        # 고정 장애물/계단: 시간제한 없음 (영구)
         expires_at = None
 
     # 3. 신규 제보 레코드 생성
@@ -216,17 +215,16 @@ async def create_report(
         "heading_accuracy": heading_accuracy,
         "hazard_type": primary_hazard,
         "confidence": max(
-            (item["confidence"] for item in reportable_on_walkway), default=None
+            (item["confidence"] for item in reportable_obstacles), default=None
         ),
         "severity": stored_severity,
-        "overall_risk": analysis["overall_risk"],
+        "overall_risk": calculated_risk,
         "detected_labels": ",".join(labels) or None,
         "photo_path": photo_path,
         "status": "verified",
         "is_active": is_active,
     }
 
-    # Model 컬럼에 report_count, expires_at이 정의되어 있는 경우 세팅
     if hasattr(HazardReport, "report_count"):
         report_kwargs["report_count"] = report_count
     if hasattr(HazardReport, "expires_at"):
@@ -254,7 +252,7 @@ async def create_report(
         model_ready=analysis["model_ready"],
         walkway_detected=analysis["walkway_detected"],
         obstacles_detected=analysis["obstacles_detected"],
-        obstacles_on_walkway=analysis["obstacles_on_walkway"],
+        obstacles_on_walkway=len(reportable_obstacles),
         detections=analysis["detections"],
     )
 
@@ -283,7 +281,6 @@ def get_nearby_reports(
         )
     )
 
-    # expires_at 컬럼이 존재하는 경우 만료 시각(TTL) 필터링 적용
     if hasattr(HazardReport, "expires_at"):
         query = query.filter(
             (HazardReport.expires_at.is_(None)) | (HazardReport.expires_at >= now)
