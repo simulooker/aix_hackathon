@@ -376,8 +376,11 @@ export function KakaoMap({
           }
         }
 
-        marker(data.origin, '출발지');
-        marker(data.destination, '목적지');
+        const originPoint = data.origin || (data.route && data.route.length > 0 ? data.route[0] : null);
+const destPoint = data.destination || (data.route && data.route.length > 0 ? data.route[data.route.length - 1] : null);
+
+marker(originPoint, '출발지');
+marker(destPoint, '목적지');
 
         data.disasters.forEach(function (disaster) {
           const position = new kakao.maps.LatLng(disaster.latitude, disaster.longitude);
