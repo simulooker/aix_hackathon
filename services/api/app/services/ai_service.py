@@ -112,30 +112,40 @@ class AIService:
         if label == "person":
             return "none"
 
-        # 보행로 위가 아니더라도 근접한 대형 차량/장애물은 위험 고려
-        if not on_walkway and proximity < 0.6:
+        # 보행 통로가 화면 폭의 35% 이상 넉넉히 확보되어 있고 도로를 완전히 막지 않았다면 위험 제외
+        if remaining >= 0.35 and blocked < 0.55:
+            return "none"
+
+        # 보행로 위가 아니며 남은 공간이 25% 이상 확보된 경우 위험 없음 처리
+        if not on_walkway and remaining >= 0.25:
             return "none"
 
         distance_factor = min(1.0, max(0.40, (proximity - 0.25) / 0.55))
         effective_blocked = blocked * distance_factor
 
-        # 💡 차량/오토바이/적치물은 골목 폭을 35% 이상 차지하거나 근접해 있으면 즉시 위험 산정
-        if label in {"motor_vehicle", "car", "truck", "bus", "two_wheeler", "movable_obstacle", "fixed_obstacle", "obstacle", "construction"}:
-            if effective_blocked >= 0.45 or box_width_ratio >= 0.35:
+        # 차량/이동성 장애물 판정
+        if label in {
+            "motor_vehicle", "car", "truck", "bus", "two_wheeler",
+            "movable_obstacle", "fixed_obstacle", "obstacle", "construction"
+        }:
+            # 도로를 실제로 절반 이상 막았거나 남은 통로가 15% 미만으로 극히 좁을 때만 high
+            if effective_blocked >= 0.50 or (remaining < 0.15 and box_width_ratio >= 0.40):
                 return "high"
-            if effective_blocked >= 0.20 or box_width_ratio >= 0.20:
+            # 통행에 다소 불편을 주는 수준
+            if effective_blocked >= 0.25 or (remaining < 0.25 and box_width_ratio >= 0.30):
                 return "medium"
-            if on_walkway and proximity >= 0.50:
+            if on_walkway and remaining < 0.35:
                 return "low"
+            return "none"
 
         # 일반 장애물 판정
-        if effective_blocked >= 0.50 or (remaining < 0.12 and box_width_ratio >= 0.25):
+        if effective_blocked >= 0.50 or (remaining < 0.15 and box_width_ratio >= 0.35):
             return "high"
 
-        if effective_blocked >= 0.25:
+        if effective_blocked >= 0.25 or (remaining < 0.25 and box_width_ratio >= 0.25):
             return "medium"
 
-        if on_walkway and proximity >= 0.60:
+        if on_walkway and proximity >= 0.60 and remaining < 0.35:
             return "low"
 
         return "none"
@@ -238,19 +248,23 @@ class AIService:
                         ),
                         "proximity": round(proximity, 4),
                         "on_walkway": True,
-                        "risk": "high",  # 💡 계단은 무조건 고위험(통행불가) 판정
+                        "risk": "high",
                     }
                 )
                 stair_detections += 1
 
-        # 💡 [핵심] 골목길 양측 주정차(다중 차량) 종합 판정
-        # 차량이 2대 이상이거나, 화면 가로의 40% 이상을 차량이 차지한 경우 종합 위험도를 'high' 또는 'medium'으로 승격
-        if vehicle_count >= 2 and total_vehicle_width_ratio >= 0.40:
+        # 💡 [핵심 보정] 한쪽 벽면 일렬 주차(통로 확보)는 high 승격을 방지하고, 남은 공간이 20% 미만으로 꽉 막힌 경우만 high 처리
+        min_remaining = min(
+            (item["remaining_walkway_image_ratio"] for item in detections),
+            default=1.0,
+        )
+
+        if vehicle_count >= 2 and total_vehicle_width_ratio >= 0.60 and min_remaining < 0.20:
             for item in detections:
                 if item["label"] in {"motor_vehicle", "car", "truck", "bus"}:
                     if RISK_ORDER[item["risk"]] < RISK_ORDER["high"]:
                         item["risk"] = "high"
-        elif vehicle_count >= 2 and total_vehicle_width_ratio >= 0.25:
+        elif vehicle_count >= 2 and total_vehicle_width_ratio >= 0.35 and min_remaining < 0.35:
             for item in detections:
                 if item["label"] in {"motor_vehicle", "car", "truck", "bus"}:
                     if RISK_ORDER[item["risk"]] < RISK_ORDER["medium"]:
