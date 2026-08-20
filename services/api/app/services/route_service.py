@@ -182,7 +182,7 @@ def _candidate_score(candidate: _RouteCandidate, profile: str) -> float:
     slope_cost = 0.0
     if profile == "wheelchair":
         grade = max(0.0, candidate.max_grade_percent)
-        slope_cost += max(0.0, min(grade, 5.0) - 2.0) * 10
+        slope_cost += max(0.0, min(grade, 5.0) - 3.0) * 10
         slope_cost += max(0.0, min(grade, 8.3) - 5.0) * 50
         slope_cost += max(0.0, grade - 8.3) * 120
         slope_cost += candidate.ascent_m * 3.0
@@ -277,14 +277,6 @@ def _filter_hazards_for_profile(
     origin: Any = None,
     destination: Any = None,
 ) -> list[Any]:
-    """
-    사용자 유형별 차등 회피 필터링:
-    - 만료된 핀(expires_at < now)은 자동 배제
-    - 출발/도착점 35m 이내 핀은 제외하여 골목 스냅 밀림 원천 방지
-    - wheelchair: 모든 제보 위험 요소를 회피 대상으로 지정
-    - elderly: 심각도 >= 0.6 또는 40m 내 3개 이상 밀집 구역만 선별 회피 (계단은 별도 점수 처리)
-    - general: 회피 대상 없음
-    """
     if not hazards or profile == "general":
         return []
 
@@ -397,9 +389,31 @@ def _parse_ors_candidates(
 def _slope_metrics(
     geometry: list[dict[str, float]],
 ) -> tuple[float, float, float, tuple[dict[str, Any], ...]]:
+    """
+    NavigationScreen UI 기준과 100% 일치화된 경사도 연산
+    - 3포인트 이동평균(스무딩)을 적용해 순간 위성 고도 튐(스파이크) 제거
+    - 3.0% 미만은 평지로 취급하여 노란색(주의) 오인 방지
+    - 최소 20m 이상 누적 및 유의미한 높이차(0.45m 이상) 발생 시에만 최대 경사도로 인정
+    """
     elevations = [point.get("elevation") for point in geometry]
     if not any(value is not None for value in elevations):
         return 0.0, 0.0, 0.0, ()
+
+    # 1. 3포인트 이동평균 스무딩
+    smoothed_geometry: list[dict[str, float]] = []
+    for idx, point in enumerate(geometry):
+        sum_elev = 0.0
+        count_elev = 0
+        for k in range(max(0, idx - 1), min(len(geometry), idx + 2)):
+            e = geometry[k].get("elevation")
+            if e is not None:
+                sum_elev += e
+                count_elev += 1
+        smoothed_geometry.append({
+            "latitude": point["latitude"],
+            "longitude": point["longitude"],
+            "elevation": (sum_elev / count_elev) if count_elev > 0 else (point.get("elevation") or 0.0)
+        })
 
     ascent = 0.0
     descent = 0.0
@@ -408,42 +422,48 @@ def _slope_metrics(
     window_start = 0
     window_distance = 0.0
 
-    for index in range(1, len(geometry)):
-        previous = geometry[index - 1]
-        current = geometry[index]
+    for index in range(1, len(smoothed_geometry)):
+        previous = smoothed_geometry[index - 1]
+        current = smoothed_geometry[index]
         distance = distance_meters(
             previous["latitude"],
             previous["longitude"],
             current["latitude"],
             current["longitude"],
         )
-        previous_elevation = previous.get("elevation")
-        current_elevation = current.get("elevation")
-        if previous_elevation is None or current_elevation is None:
-            window_start = index
-            window_distance = 0
-            continue
+        previous_elevation = previous.get("elevation", 0.0)
+        current_elevation = current.get("elevation", 0.0)
+
         change = current_elevation - previous_elevation
-        if change > 0.5:
+        if change > 0.4:
             ascent += change
-        elif change < -0.5:
+        elif change < -0.4:
             descent += abs(change)
+
         window_distance += distance
-        if window_distance < 20 and index < len(geometry) - 1:
+
+        # 최소 20m 이상 누적되거나 마지막 점일 때만 신뢰 구간으로 판정
+        if window_distance < 20.0 and index < len(smoothed_geometry) - 1:
             continue
-        start_elevation = geometry[window_start].get("elevation")
-        if start_elevation is not None and window_distance >= 8:
-            grade = (current_elevation - start_elevation) / window_distance * 100
-            max_grade = max(max_grade, abs(grade))
-            absolute_grade = abs(grade)
-            if absolute_grade >= 2:
+
+        start_elevation = smoothed_geometry[window_start].get("elevation", 0.0)
+        if window_distance >= 15.0:
+            elev_diff = abs(current_elevation - start_elevation)
+            grade = (elev_diff / window_distance) * 100.0
+
+            # 3.0% 이상이고 최소 높이차 0.45m 이상일 때만 경사도 최대값 반영
+            if elev_diff >= 0.45 and grade >= 3.0:
+                max_grade = max(max_grade, grade)
+
+            # NavigationScreen 등급 분류 기준 일치화
+            if grade >= 3.0 and elev_diff >= 0.45:
                 level = (
                     "blocked"
-                    if absolute_grade >= WHEELCHAIR_BLOCKED_SLOPE_PERCENT
-                    else "very_steep"
-                    if absolute_grade >= 8.3
+                    if grade >= WHEELCHAIR_BLOCKED_SLOPE_PERCENT
+                    else "verySteep"
+                    if grade >= 8.3
                     else "steep"
-                    if absolute_grade >= 5
+                    if grade >= 5.0
                     else "moderate"
                 )
                 segments.append(
@@ -455,8 +475,9 @@ def _slope_metrics(
                         "level": level,
                     }
                 )
+
         window_start = index
-        window_distance = 0
+        window_distance = 0.0
 
     return (
         round(ascent, 1),

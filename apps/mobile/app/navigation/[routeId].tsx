@@ -53,7 +53,9 @@ export default function NavigationScreen() {
   const current = guidance.steps[guidance.stepIndex];
   const maxGrade = route.max_grade_percent ?? 0;
   const maxGradeDegrees = Math.atan(maxGrade / 100) * 180 / Math.PI;
-  const slopeLevel = maxGrade >= 12.5 ? 'blocked' : maxGrade >= 8.3 ? 'verySteep' : maxGrade >= 5 ? 'steep' : 'moderate';
+  
+  // 💡 [수정] 평지 기준 3.0% 미만 완화 및 등급 세분화
+  const slopeLevel = maxGrade >= 12.5 ? 'blocked' : maxGrade >= 8.3 ? 'verySteep' : maxGrade >= 5.0 ? 'steep' : 'moderate';
   const slopeLabel = slopeLevel === 'blocked' ? '통행 곤란 추정' : slopeLevel === 'verySteep' ? '매우 힘듦' : slopeLevel === 'steep' ? '힘듦' : '주의';
   const slopeIconColor = slopeLevel === 'blocked' ? '#292524' : slopeLevel === 'verySteep' ? '#B42318' : slopeLevel === 'steep' ? '#B54708' : '#9A6700';
 
@@ -63,6 +65,7 @@ export default function NavigationScreen() {
         style={styles.map}
         center={origin}
         currentLocation={guidance.currentLocation ?? coordinates ?? origin}
+        origin={origin} // 💡 [핵심] 출발지(origin) props 추가로 배포본에서도 출발지 핀 정상 렌더링
         destination={destination}
         route={route.geometry}
         hazards={route.hazards_on_route ?? []}
@@ -74,7 +77,8 @@ export default function NavigationScreen() {
           <View style={styles.voiceRow}><MaterialCommunityIcons name={guidance.voiceEnabled ? 'volume-high' : 'volume-off'} size={21} color="#263D35" /><Text style={styles.voiceText}>음성</Text><Switch value={guidance.voiceEnabled} onValueChange={guidance.setVoiceEnabled} trackColor={{ false: '#CBD5D1', true: '#8BC8B1' }} thumbColor={guidance.voiceEnabled ? '#167C5A' : '#FFF'} /></View>
         </View>
 
-        {maxGrade >= 2 && (
+        {/* 💡 [수정] 3.0% 이상일 때만 경사 구간 알림창 노출 */}
+        {maxGrade >= 3.0 && (
           <View style={[
             styles.slopeNotice,
             slopeLevel === 'steep' && styles.slopeNoticeSteep,
