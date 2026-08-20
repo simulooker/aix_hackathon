@@ -389,12 +389,6 @@ def _parse_ors_candidates(
 def _slope_metrics(
     geometry: list[dict[str, float]],
 ) -> tuple[float, float, float, tuple[dict[str, Any], ...]]:
-    """
-    NavigationScreen UI 기준과 100% 일치화된 경사도 연산
-    - 3포인트 이동평균(스무딩)을 적용해 순간 위성 고도 튐(스파이크) 제거
-    - 3.0% 미만은 평지로 취급하여 노란색(주의) 오인 방지
-    - 최소 20m 이상 누적 및 유의미한 높이차(0.45m 이상) 발생 시에만 최대 경사도로 인정
-    """
     elevations = [point.get("elevation") for point in geometry]
     if not any(value is not None for value in elevations):
         return 0.0, 0.0, 0.0, ()
@@ -442,7 +436,6 @@ def _slope_metrics(
 
         window_distance += distance
 
-        # 최소 20m 이상 누적되거나 마지막 점일 때만 신뢰 구간으로 판정
         if window_distance < 20.0 and index < len(smoothed_geometry) - 1:
             continue
 
@@ -451,16 +444,14 @@ def _slope_metrics(
             elev_diff = abs(current_elevation - start_elevation)
             grade = (elev_diff / window_distance) * 100.0
 
-            # 3.0% 이상이고 최소 높이차 0.45m 이상일 때만 경사도 최대값 반영
             if elev_diff >= 0.45 and grade >= 3.0:
                 max_grade = max(max_grade, grade)
 
-            # NavigationScreen 등급 분류 기준 일치화
             if grade >= 3.0 and elev_diff >= 0.45:
                 level = (
                     "blocked"
                     if grade >= WHEELCHAIR_BLOCKED_SLOPE_PERCENT
-                    else "verySteep"
+                    else "very_steep"  # 👈 Pydantic Literal 스키마 규격 준수
                     if grade >= 8.3
                     else "steep"
                     if grade >= 5.0
