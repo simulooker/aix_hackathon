@@ -64,7 +64,7 @@ export function KakaoMap({
 }: KakaoMapProps) {
   const apiKey = process.env.EXPO_PUBLIC_KAKAO_MAP_KEY ?? '';
   const [mapError, setMapError] = useState<string>();
-  const webViewRef = useRef<WebView>(null);
+  const webViewRef = useRef<WebView<unknown>>(null);
 
   const busPayloadRef = useRef({ stops: busStops });
   busPayloadRef.current = { stops: busStops };
@@ -723,7 +723,7 @@ marker(destPoint, '목적지');
 
   return (
     <View style={[styles.container, style]}>
-      <WebView
+      <WebView<unknown>
         ref={webViewRef}
         style={styles.webview}
         source={{ html, baseUrl: KAKAO_BASE_URL }}

@@ -8,7 +8,6 @@
     "icon": "./assets/images/ai-safe-route-logo-v6.png",
     "scheme": "aisafeway",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "ios": {
       "bundleIdentifier": "com.simulooker.aisaferoute",
       "supportsTablet": true,
@@ -23,7 +22,6 @@
         "backgroundColor": "#DDF1E8",
         "foregroundImage": "./assets/images/ai-safe-route-logo-v6.png"
       },
-      "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "permissions": [
         "android.permission.ACCESS_COARSE_LOCATION",
@@ -66,7 +64,11 @@
           }
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-font",
+      "expo-image",
+      "expo-web-browser",
+      "expo-status-bar"
     ],
     "experiments": {
       "typedRoutes": true,
