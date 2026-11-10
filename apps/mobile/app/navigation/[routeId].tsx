@@ -54,6 +54,9 @@ export default function NavigationScreen() {
     guidance.started && !guidance.arrived, guidance.announce);
   const [selectedHazard, setSelectedHazard] = useState<HazardReport>();
   const [selectingPhoto, setSelectingPhoto] = useState(false);
+  const [followingLocation, setFollowingLocation] = useState(true);
+  const [followLocationRequest, setFollowLocationRequest] = useState(0);
+  const currentLocation = guidance.currentLocation ?? coordinates;
 
   const testReport = async (pickPhoto = false) => {
     if (!__DEV__ || selectingPhoto || live.busy) return;
@@ -91,10 +94,15 @@ export default function NavigationScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <KakaoMap
+      <View style={styles.mapArea}>
+        <KakaoMap
         style={styles.map}
         center={origin}
-        currentLocation={guidance.currentLocation ?? coordinates ?? origin}
+        currentLocation={currentLocation}
+        followLocation={followingLocation}
+        showSlopeLegend={!guidance.started}
+        followLocationRequest={followLocationRequest}
+        onFollowLocationChange={setFollowingLocation}
         origin={origin} // 💡 [핵심] 출발지(origin) props 추가로 배포본에서도 출발지 핀 정상 렌더링
         destination={destination}
         route={route.geometry}
@@ -102,6 +110,23 @@ export default function NavigationScreen() {
         onHazardPress={setSelectedHazard}
         disasters={route.disaster_zones ?? []}
       />
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="내 위치로 돌아와 지도 따라가기"
+          accessibilityState={{ disabled: !currentLocation, selected: followingLocation }}
+          disabled={!currentLocation}
+          onPress={() => {
+            setFollowingLocation(true);
+            setFollowLocationRequest((value) => value + 1);
+          }}
+          style={[styles.locationButton, followingLocation && styles.locationButtonActive,
+            !currentLocation && styles.locationButtonDisabled]}>
+          <MaterialCommunityIcons name={followingLocation ? 'crosshairs-gps' : 'crosshairs'} size={24} color={followingLocation ? '#FFF' : '#167C5A'} />
+          <Text style={[styles.locationButtonText, followingLocation && styles.locationButtonTextActive]}>
+            {followingLocation ? '위치 따라가는 중' : '내 위치로'}
+          </Text>
+        </Pressable>
+      </View>
       <ScrollView style={{ maxHeight: '55%' }} contentContainerStyle={styles.panel}>
         <View style={styles.headerRow}>
           <View><Text style={styles.title}>안전 보행 안내</Text><Text style={styles.body}>전체 거리 {formatDistance(route.distance_m)}</Text></View>
@@ -165,6 +190,12 @@ export default function NavigationScreen() {
 }
 
 const styles = StyleSheet.create({
+  mapArea: { flex: 1 },
+  locationButton: { position: 'absolute', right: 14, bottom: 14, minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 14, borderRadius: 24, backgroundColor: '#FFF', borderWidth: 1, borderColor: '#DCE7E2', elevation: 4 },
+  locationButtonActive: { backgroundColor: '#167C5A', borderColor: '#167C5A' },
+  locationButtonDisabled: { opacity: 0.5 },
+  locationButtonText: { color: '#167C5A', fontSize: 13, fontWeight: '800' },
+  locationButtonTextActive: { color: '#FFF' },
   container: { flex: 1, backgroundColor: '#F7FAF8' }, emptyContainer: { flex: 1, backgroundColor: '#F7FAF8', padding: 24, justifyContent: 'center' }, map: { flex: 1 },
   panel: { padding: 18, gap: 12 }, headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   testPanel: { padding: 10, gap: 8, backgroundColor: '#EEF5F1', borderRadius: 12 },

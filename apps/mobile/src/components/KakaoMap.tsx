@@ -23,6 +23,10 @@ type KakaoMapProps = {
   searchRequest?: KakaoSearchRequest;
   onSearchResults?: (results: KakaoPlace[]) => void;
   recenterRequest?: number;
+  followLocation?: boolean;
+  showSlopeLegend?: boolean;
+  followLocationRequest?: number;
+  onFollowLocationChange?: (following: boolean) => void;
   style?: StyleProp<ViewStyle>;
 };
 
@@ -66,11 +70,27 @@ export function KakaoMap({
   searchRequest,
   onSearchResults,
   recenterRequest,
+  followLocation = false,
+  showSlopeLegend = true,
+  followLocationRequest = 0,
+  onFollowLocationChange,
   style,
 }: KakaoMapProps) {
   const apiKey = process.env.EXPO_PUBLIC_KAKAO_MAP_KEY ?? '';
   const [mapError, setMapError] = useState<string>();
   const webViewRef = useRef<WebView<unknown>>(null);
+
+  const pushSlopeLegendVisibility = useCallback((visible: boolean) => {
+    webViewRef.current?.injectJavaScript(`
+      var legend = document.getElementById('slope-legend');
+      if (legend) legend.style.visibility = '${visible ? 'visible' : 'hidden'}';
+      true;
+    `);
+  }, []);
+
+  useEffect(() => {
+    pushSlopeLegendVisibility(showSlopeLegend);
+  }, [showSlopeLegend, pushSlopeLegendVisibility]);
 
   const pushBusLayer = useCallback((payload: { stops: BusStop[] }) => {
     const encoded = JSON.stringify(JSON.stringify(payload));
@@ -102,6 +122,19 @@ export function KakaoMap({
       true;
     `);
   }, []);
+
+  const pushFollowLocation = useCallback((following: boolean) => {
+    webViewRef.current?.injectJavaScript(`
+      if (window.__withyouLocation) {
+        window.__withyouLocation.setFollow(${following});
+      }
+      true;
+    `);
+  }, []);
+
+  useEffect(() => {
+    pushFollowLocation(followLocation);
+  }, [followLocation, followLocationRequest, pushFollowLocation]);
 
   useEffect(() => {
     pushBusLayer({ stops: busStops });
@@ -158,7 +191,7 @@ export function KakaoMap({
     .disaster-warning-text{max-width:150px;padding:2px 8px;border-radius:9px;background:rgba(20,37,31,.88);color:#fff;
       font:800 10px/1.35 -apple-system,BlinkMacSystemFont,sans-serif;text-align:center;
       white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    #slope-legend{position:fixed;top:12px;left:12px;z-index:20;display:none;flex-direction:column;gap:4px;
+    #slope-legend{position:fixed;top:12px;left:12px;z-index:20;display:none;visibility:hidden;flex-direction:column;gap:4px;
       padding:7px 9px;border-radius:10px;background:rgba(255,255,255,.93);box-shadow:0 2px 7px rgba(0,0,0,.18);
       color:#40534c;font:700 10px/1.2 -apple-system,BlinkMacSystemFont,sans-serif}
     .slope-item{display:flex;align-items:center;gap:5px}.slope-chip{width:18px;height:5px;border-radius:3px}
@@ -318,6 +351,7 @@ export function KakaoMap({
 
     function createLocationLayer(map) {
       let position;
+      let following = false;
       const wrapper = document.createElement('div');
       wrapper.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:2px;white-space:nowrap;';
       const label = document.createElement('div');
@@ -356,6 +390,11 @@ export function KakaoMap({
           position = new kakao.maps.LatLng(latitude, longitude);
           overlay.setPosition(position);
           overlay.setMap(map);
+          if (following) map.panTo(position);
+        },
+        setFollow: function (enabled) {
+          following = enabled;
+          if (following && position) map.panTo(position);
         }
       };
     }
@@ -573,6 +612,11 @@ marker(destPoint, '목적지');
         mapContainer.addEventListener('pointerup', cancelLongPress, true);
         mapContainer.addEventListener('pointercancel', cancelLongPress, true);
         kakao.maps.event.addListener(map, 'dragstart', cancelLongPress);
+        kakao.maps.event.addListener(map, 'dragstart', function () {
+          // Stop inside the WebView immediately, before the native state updates.
+          if (window.__withyouLocation) window.__withyouLocation.setFollow(false);
+          send('followStopped', {});
+        });
 
         kakao.maps.event.addListener(map, 'click', function (event) {
           if (hazardClickLock || Date.now() < suppressMapClickUntil) return;
@@ -699,12 +743,16 @@ marker(destPoint, '목적지');
       };
       if (message.type === 'ready') {
         setMapError(undefined);
+        pushSlopeLegendVisibility(showSlopeLegend);
       } else if (message.type === 'busLayerReady') {
         pushBusLayer({ stops: busStops });
       } else if (message.type === 'hazardLayerReady') {
         pushHazardLayer(hazards);
       } else if (message.type === 'locationLayerReady') {
+        pushFollowLocation(followLocation);
         pushCurrentLocation(currentLocation);
+      } else if (message.type === 'followStopped') {
+        onFollowLocationChange?.(false);
       } else if (message.type === 'error') {
         setMapError((message as { message?: string }).message ?? '카카오 지도를 불러오지 못했습니다.');
       } else if (message.type === 'press' && message.latitude != null && message.longitude != null) {

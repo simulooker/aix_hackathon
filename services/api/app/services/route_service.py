@@ -489,8 +489,11 @@ def _avoid_polygons(
 
     # 1. 재난 통제구역 회피
     for zone in zones:
-        latitude_radius = zone.radius_m / 111_320
-        longitude_radius = zone.radius_m / max(
+        # Enclose the validation circle instead of inscribing a polygon in it.
+        # The extra metre accounts for the coordinate-to-metre approximation.
+        polygon_radius = (zone.radius_m + 1) / cos(pi / 12)
+        latitude_radius = polygon_radius / 111_320
+        longitude_radius = polygon_radius / max(
             1, 111_320 * cos(radians(zone.latitude))
         )
         ring = [
@@ -734,11 +737,18 @@ def calculate_walking_route(
                                 raise LiveHazardRouteBlocked(
                                     "새 위험 구간을 피하는 경로가 없습니다. 이동을 멈추고 주변을 확인해 주세요."
                                 )
+                        if disaster_zones:
+                            candidates = [
+                                candidate for candidate in candidates
+                                if not _route_intersects_disaster_zone(
+                                    candidate.geometry, disaster_zones
+                                )
+                            ]
+                            if not candidates:
+                                raise DisasterRouteBlocked(DISASTER_ROUTE_MESSAGE)
                         selected, avoided_count = _select_candidate(
                             candidates, profile, prefer_safe_route
                         )
-                        if _route_intersects_disaster_zone(selected.geometry, disaster_zones):
-                            raise DisasterRouteBlocked(DISASTER_ROUTE_MESSAGE)
 
                         return RouteResult(
                             geometry=selected.geometry,
@@ -779,7 +789,10 @@ def calculate_walking_route(
                 "위험 구간을 피하는 경로를 계산하지 못했습니다. 이동을 멈추고 다시 시도해 주세요."
             ) from exc
         if disaster_zones:
-            raise DisasterRouteBlocked(DISASTER_ROUTE_MESSAGE) from exc
+            raise ValueError(
+                "재난 통제구역 우회 경로를 계산하지 못했습니다. "
+                "경로 서버 오류 또는 연결 문제일 수 있으니 잠시 후 다시 시도해 주세요."
+            ) from exc
         return RouteResult(
             geometry=[
                 {"latitude": origin.latitude, "longitude": origin.longitude},

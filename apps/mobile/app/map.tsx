@@ -304,6 +304,14 @@ export default function MapScreen() {
     const viewport = mapViewportRef.current;
     const currentCoordinates = viewport?.center ?? locationRef.current;
 
+    // Reset the selected places as well as their pins and any old route.
+    setOrigin(undefined);
+    setOriginName('현재 위치');
+    setDestination(undefined);
+    setDestinationName('');
+    clearRoute();
+    if (viewport) setMapCenter(viewport.center);
+
     if (showHazards && viewport && viewport.level <= 5) {
       const radiusM = viewport.level >= 5 ? 1600 : viewport.level === 4 ? 900 : 500;
       tasks.push(
