@@ -2,6 +2,7 @@ export type RiskLevel = 'none' | 'low' | 'medium' | 'high';
 
 export type HazardReport = {
   id: string;
+  status?: string;
   latitude: number;
   longitude: number;
   heading_deg?: number | null;

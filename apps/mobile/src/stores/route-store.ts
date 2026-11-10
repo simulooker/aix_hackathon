@@ -2,10 +2,11 @@ import { create } from 'zustand';
 
 import { requestRoute } from '@/src/services/api';
 import { usePreferencesStore } from '@/src/stores/preferences-store';
-import type { RoutePoint, RouteResponse } from '@/src/types/route';
+import type { RoutePoint, RouteProfile, RouteResponse } from '@/src/types/route';
 
 type RouteState = {
   route?: RouteResponse;
+  profile?: RouteProfile;
   loading: boolean;
   error?: string;
   fetchRoute: (origin: RoutePoint, destination: RoutePoint) => Promise<RouteResponse | undefined>;
@@ -28,7 +29,7 @@ export const useRouteStore = create<RouteState>((set) => ({
         set({ route: undefined, loading: false, error: route.message || '실제 보행 경로를 찾지 못했습니다. 목적지를 다시 선택해 주세요.' });
         return undefined;
       }
-      set({ route, loading: false });
+      set({ route, profile, loading: false });
       return route;
     } catch (error) {
       const message = error instanceof Error ? error.message : '실제 보행 경로를 찾지 못했습니다.';

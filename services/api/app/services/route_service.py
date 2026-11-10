@@ -33,6 +33,10 @@ class AccessibilityRouteBlocked(ValueError):
     """이용자 유형으로 통과할 수 없는 구간만 경로 후보에 남은 경우입니다."""
 
 
+class LiveHazardRouteBlocked(ValueError):
+    """Live closures must not be relaxed or replaced with a straight line."""
+
+
 @dataclass(frozen=True)
 class RouteResult:
     geometry: list[dict[str, float]]
@@ -600,6 +604,7 @@ def calculate_walking_route(
     profile: str = "general",
     prefer_safe_route: bool = True,
     disaster_zones: list[DisasterZone] | None = None,
+    blocked_points: list[Any] | None = None,
 ) -> RouteResult:
     direct_distance = distance_meters(
         origin.latitude, origin.longitude, destination.latitude, destination.longitude
@@ -610,6 +615,7 @@ def calculate_walking_route(
         )
 
     hazards = hazards or []
+    blocked_points = blocked_points or []
     disaster_zones = disaster_zones or []
     for zone in disaster_zones:
         if distance_meters(
@@ -650,7 +656,14 @@ def calculate_walking_route(
 
     # 출발/도착점 35m 이내 핀 제외 및 만료된 핀 배제 후 회피 폴리곤 생성
     hazards_to_avoid = _filter_hazards_for_profile(hazards, profile, origin, destination)
-    avoid_polygons = _avoid_polygons(disaster_zones, hazards_to_avoid)
+    live_zones = [
+        DisasterZone(
+            id=f"live-{index}", kind="other", title="새 위험 제보",
+            latitude=point.latitude, longitude=point.longitude, radius_m=22,
+        )
+        for index, point in enumerate(blocked_points)
+    ]
+    avoid_polygons = _avoid_polygons([*disaster_zones, *live_zones], hazards_to_avoid)
 
     options: dict[str, Any] = {}
     if avoid_polygons:
@@ -686,11 +699,13 @@ def calculate_walking_route(
 
                     if response.status_code in {400, 404, 422} and hazards_to_avoid:
                         relaxed_body = dict(body)
-                        relaxed_polygons = _avoid_polygons(disaster_zones, None)
+                        relaxed_polygons = _avoid_polygons([*disaster_zones, *live_zones], None)
+                        relaxed_options = dict(body.get("options", {}))
                         if relaxed_polygons:
-                            relaxed_body["options"] = {"avoid_polygons": relaxed_polygons}
+                            relaxed_options["avoid_polygons"] = relaxed_polygons
                         else:
-                            relaxed_body.pop("options", None)
+                            relaxed_options.pop("avoid_polygons", None)
+                        relaxed_body["options"] = relaxed_options
                         relaxed_body.pop("alternative_routes", None)
                         response = client.post(url, headers=headers, json=relaxed_body)
 
@@ -702,6 +717,23 @@ def calculate_walking_route(
 
                     if response.status_code == 200:
                         candidates = _parse_ors_candidates(response.json(), hazards)
+                        if blocked_points:
+                            candidates = [
+                                candidate for candidate in candidates
+                                if not _nearby_hazards(candidate.geometry, blocked_points)
+                                and distance_meters(
+                                    origin.latitude, origin.longitude,
+                                    candidate.geometry[0]["latitude"], candidate.geometry[0]["longitude"],
+                                ) <= 35
+                                and distance_meters(
+                                    destination.latitude, destination.longitude,
+                                    candidate.geometry[-1]["latitude"], candidate.geometry[-1]["longitude"],
+                                ) <= 35
+                            ]
+                            if not candidates:
+                                raise LiveHazardRouteBlocked(
+                                    "새 위험 구간을 피하는 경로가 없습니다. 이동을 멈추고 주변을 확인해 주세요."
+                                )
                         selected, avoided_count = _select_candidate(
                             candidates, profile, prefer_safe_route
                         )
@@ -728,7 +760,7 @@ def calculate_walking_route(
                             response.status_code,
                             response.text,
                         )
-                except (DisasterRouteBlocked, AccessibilityRouteBlocked):
+                except (DisasterRouteBlocked, AccessibilityRouteBlocked, LiveHazardRouteBlocked):
                     raise
                 except Exception as exc:
                     last_exception = exc
@@ -738,10 +770,14 @@ def calculate_walking_route(
             raise last_exception
         raise ValueError("보행 경로를 탐색하지 못했습니다.")
 
-    except (DisasterRouteBlocked, AccessibilityRouteBlocked):
+    except (DisasterRouteBlocked, AccessibilityRouteBlocked, LiveHazardRouteBlocked):
         raise
     except Exception as exc:  # noqa: BLE001
         logger.error("❌ OpenRouteService 처리 중 에러 발생: %s", exc)
+        if blocked_points:
+            raise LiveHazardRouteBlocked(
+                "위험 구간을 피하는 경로를 계산하지 못했습니다. 이동을 멈추고 다시 시도해 주세요."
+            ) from exc
         if disaster_zones:
             raise DisasterRouteBlocked(DISASTER_ROUTE_MESSAGE) from exc
         return RouteResult(

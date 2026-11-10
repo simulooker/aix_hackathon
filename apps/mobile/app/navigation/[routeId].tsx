@@ -1,6 +1,8 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { SafeAreaView, StyleSheet, Switch, Text, View } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
+import { useState } from 'react';
+import { Alert, Image, Pressable, SafeAreaView, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 
 import { KakaoMap } from '@/src/components/KakaoMap';
 import { PrimaryButton } from '@/src/components/PrimaryButton';
@@ -8,6 +10,11 @@ import type { Maneuver, NavigationStep } from '@/src/features/navigation/routeSt
 import { useVoiceGuidance } from '@/src/features/navigation/useVoiceGuidance';
 import { useCurrentLocation } from '@/src/features/location/useCurrentLocation';
 import { useRouteStore } from '@/src/stores/route-store';
+import { useLiveRerouting } from '@/src/features/navigation/useLiveRerouting';
+import { getReportImageUrl } from '@/src/services/api';
+import type { HazardReport } from '@/src/types/hazard';
+
+const TEST_REPORT_IMAGE = require('@/assets/images/reroute-test-fixture.png');
 
 const maneuverIcon: Record<Maneuver, keyof typeof MaterialCommunityIcons.glyphMap> = {
   start: 'arrow-up-bold',
@@ -43,6 +50,29 @@ export default function NavigationScreen() {
   const route = useRouteStore((state) => state.route);
   const guidance = useVoiceGuidance(route);
   const { coordinates } = useCurrentLocation();
+  const live = useLiveRerouting(route, guidance.currentLocation ?? coordinates,
+    guidance.started && !guidance.arrived, guidance.announce);
+  const [selectedHazard, setSelectedHazard] = useState<HazardReport>();
+  const [selectingPhoto, setSelectingPhoto] = useState(false);
+
+  const testReport = async (pickPhoto = false) => {
+    if (!__DEV__ || selectingPhoto || live.busy) return;
+    setSelectingPhoto(true);
+    try {
+      let uri: string | undefined;
+      if (pickPhoto) {
+        const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.8 });
+        if (result.canceled) return;
+        uri = result.assets[0].uri;
+      } else {
+        uri = Image.resolveAssetSource(TEST_REPORT_IMAGE)?.uri;
+      }
+      if (!uri) throw new Error('테스트 이미지를 불러오지 못했습니다.');
+      await live.addTestReport(uri);
+    } catch (error) {
+      Alert.alert('사진 제보 테스트', error instanceof Error ? error.message : '테스트 제보를 넣지 못했습니다.');
+    } finally { setSelectingPhoto(false); }
+  };
 
   if (!route || route.route_id !== routeId || !route.geometry.length) {
     return <SafeAreaView style={styles.emptyContainer}><Text style={styles.title}>경로 정보를 찾을 수 없습니다.</Text><Text style={styles.body}>지도에서 목적지를 다시 검색해 주세요.</Text><PrimaryButton label="지도로 돌아가기" onPress={() => router.replace('/map')} style={styles.backButton} /></SafeAreaView>;
@@ -68,14 +98,30 @@ export default function NavigationScreen() {
         origin={origin} // 💡 [핵심] 출발지(origin) props 추가로 배포본에서도 출발지 핀 정상 렌더링
         destination={destination}
         route={route.geometry}
-        hazards={route.hazards_on_route ?? []}
+        hazards={[...new Map([...(route.hazards_on_route ?? []), ...live.hazards, ...live.testReports].map((item) => [item.id, item])).values()]}
+        onHazardPress={setSelectedHazard}
         disasters={route.disaster_zones ?? []}
       />
-      <View style={styles.panel}>
+      <ScrollView style={{ maxHeight: '55%' }} contentContainerStyle={styles.panel}>
         <View style={styles.headerRow}>
           <View><Text style={styles.title}>안전 보행 안내</Text><Text style={styles.body}>전체 거리 {formatDistance(route.distance_m)}</Text></View>
           <View style={styles.voiceRow}><MaterialCommunityIcons name={guidance.voiceEnabled ? 'volume-high' : 'volume-off'} size={21} color="#263D35" /><Text style={styles.voiceText}>음성</Text><Switch value={guidance.voiceEnabled} onValueChange={guidance.setVoiceEnabled} trackColor={{ false: '#CBD5D1', true: '#8BC8B1' }} thumbColor={guidance.voiceEnabled ? '#167C5A' : '#FFF'} /></View>
         </View>
+        {!!live.message && <Text accessibilityLiveRegion="polite" style={styles.warning}>{live.message}</Text>}
+        {__DEV__ && !guidance.arrived && <View style={styles.testPanel}>
+          <PrimaryButton label="경로 위 사진 제보 테스트" loading={live.busy || selectingPhoto} onPress={() => void testReport()} />
+          <Pressable disabled={live.busy || selectingPhoto} onPress={() => void testReport(true)}><Text style={styles.testLink}>내 사진을 선택해서 테스트하기</Text></Pressable>
+          <Text style={styles.testCaption}>기본 테스트 이미지와 위험도 100%의 모의 공사 제보를 경로 중간에 넣습니다. AI 분석·실제 제보 저장 없이 우회를 시험합니다.{!guidance.started ? ' 안내 시작 전에는 표시된 출발점 기준입니다.' : ''}</Text>
+          {!!live.testReports.length && <View style={styles.photoRow}>
+            <Image source={{ uri: live.testReports[live.testReports.length - 1].photo_path! }} style={styles.reportPhoto} />
+            <Text style={styles.testCaption}>모의 사진 제보 {live.testReports.length}건{live.busy ? ' · 우회 계산 중' : ''}</Text>
+          </View>}
+        </View>}
+        {selectedHazard && <View style={styles.testPanel}>
+          <Text style={styles.body}>{selectedHazard.id.startsWith('test-') ? '모의 공사 제보' : '위험 제보 사진'}</Text>
+          <Image source={{ uri: selectedHazard.id.startsWith('test-') ? selectedHazard.photo_path! : getReportImageUrl(selectedHazard.id) }} style={{ height: 140, borderRadius: 10 }} />
+          <Pressable onPress={() => setSelectedHazard(undefined)}><Text style={styles.testLink}>사진 닫기</Text></Pressable>
+        </View>}
 
         {/* 💡 [수정] 3.0% 이상일 때만 경사 구간 알림창 노출 */}
         {maxGrade >= 3.0 && (
@@ -101,7 +147,7 @@ export default function NavigationScreen() {
         {!guidance.started ? (
           <>
             {route.used_fallback_graph && <Text style={styles.warning}>현재 경로는 실제 도로망이 아닌 임시 직선 경로입니다.</Text>}
-            <PrimaryButton label="안내 시작" variant="dark" onPress={() => void guidance.startGuidance()} />
+            <PrimaryButton label="안내 시작" variant="dark" disabled={live.busy} onPress={() => void guidance.startGuidance()} />
           </>
         ) : guidance.arrived ? (
           <View style={styles.arrived}><MaterialCommunityIcons name="map-marker-check" size={34} color="#167C5A" /><Text style={styles.arrivedText}>목적지에 도착했습니다.</Text></View>
@@ -112,14 +158,19 @@ export default function NavigationScreen() {
             <StepRow step={guidance.steps[guidance.stepIndex + 1]} mode="next" />
           </View>
         )}
-      </View>
+        {guidance.started && !guidance.arrived && <Text style={styles.testCaption}>앱을 보고 있는 동안 새 위험 제보를 5초마다 확인합니다.</Text>}
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F7FAF8' }, emptyContainer: { flex: 1, backgroundColor: '#F7FAF8', padding: 24, justifyContent: 'center' }, map: { flex: 1 },
-  panel: { padding: 18, gap: 12, maxHeight: '55%' }, headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  panel: { padding: 18, gap: 12 }, headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  testPanel: { padding: 10, gap: 8, backgroundColor: '#EEF5F1', borderRadius: 12 },
+  testLink: { color: '#167C5A', fontSize: 13, fontWeight: '700', textAlign: 'center', padding: 5 },
+  testCaption: { color: '#596A64', fontSize: 11, lineHeight: 16, flexShrink: 1 },
+  photoRow: { flexDirection: 'row', gap: 10, alignItems: 'center' }, reportPhoto: { width: 90, height: 60, borderRadius: 8 },
   title: { fontSize: 22, fontWeight: '800', color: '#14251F' }, body: { color: '#596A64', fontSize: 14, marginTop: 4 }, backButton: { marginTop: 20 },
   voiceRow: { flexDirection: 'row', alignItems: 'center', gap: 5 }, voiceText: { color: '#263D35', fontWeight: '700' }, warning: { color: '#9A6700', backgroundColor: '#FFF4CE', padding: 10, borderRadius: 10, lineHeight: 19 },
   steps: { gap: 7 }, stepRow: { flexDirection: 'row', alignItems: 'center', padding: 9, borderRadius: 14, backgroundColor: '#EEF3F0' }, currentStep: { paddingVertical: 13, backgroundColor: '#E2F3EC', borderWidth: 1, borderColor: '#9BCDBA' },

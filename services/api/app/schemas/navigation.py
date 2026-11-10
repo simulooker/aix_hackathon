@@ -26,6 +26,7 @@ class RouteRequest(BaseModel):
     destination: Point
     prefer_safe_route: bool = True
     profile: Literal["general", "elderly", "wheelchair"] = "general"
+    blocked_points: list[Point] = Field(default_factory=list, max_length=32)
 
 
 class RoadRouteRequest(BaseModel):

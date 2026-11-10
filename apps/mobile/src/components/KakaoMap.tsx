@@ -267,6 +267,13 @@ export function KakaoMap({
             dot.className = 'hazard-marker';
             dot.style.background = color;
             touchBox.appendChild(dot);
+            if (String(hazard.id).indexOf('test-') === 0) {
+              touchBox.style.position = 'relative';
+              const label = document.createElement('div');
+              label.textContent = '테스트 사진 제보';
+              label.style.cssText = 'position:absolute;bottom:45px;left:50%;transform:translateX(-50%);white-space:nowrap;background:#fff;color:#b42318;border:1px solid #fda29b;border-radius:8px;padding:4px 7px;font-size:11px;font-weight:bold;';
+              touchBox.appendChild(label);
+            }
 
             function handleHazardSelect(event) {
               if (event) {

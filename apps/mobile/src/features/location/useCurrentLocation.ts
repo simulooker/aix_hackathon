@@ -15,14 +15,10 @@ export function useCurrentLocation() {
   } = useLocationStore();
 
   useEffect(() => {
-    let active = true;
-    const initialize = async () => {
-      if (!useLocationStore.getState().coordinates) await requestCurrentLocation();
-      if (active) await startLocationUpdates();
-    };
-    void initialize();
+    // Start the GPS watcher immediately even if the one-shot request is slow.
+    void startLocationUpdates();
+    if (!useLocationStore.getState().coordinates) void requestCurrentLocation();
     return () => {
-      active = false;
       stopLocationUpdates();
     };
   }, [requestCurrentLocation, startLocationUpdates, stopLocationUpdates]);

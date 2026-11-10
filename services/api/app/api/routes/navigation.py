@@ -124,6 +124,7 @@ async def create_route(payload: RouteRequest, db: DatabaseSession) -> RouteRespo
             payload.profile,
             payload.prefer_safe_route,
             disaster_zones,
+            payload.blocked_points,
         )
         route_finished = perf_counter()
         logger.info(

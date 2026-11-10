@@ -197,13 +197,13 @@ export async function submitReport(params: {
   return response.json();
 }
 
-export async function getNearbyHazards(params: { latitude: number; longitude: number; radiusM?: number }): Promise<HazardReport[]> {
+export async function getNearbyHazards(params: { latitude: number; longitude: number; radiusM?: number; signal?: AbortSignal }): Promise<HazardReport[]> {
   const search = new URLSearchParams({
     lat: String(params.latitude),
     lon: String(params.longitude),
     radius_m: String(params.radiusM ?? 800),
   });
-  const response = await fetch(`${API_BASE_URL}/reports/nearby?${search}`);
+  const response = await fetch(`${API_BASE_URL}/reports/nearby?${search}`, { signal: params.signal });
   if (response.status === 404) return [];
   if (!response.ok) throw new Error(await errorMessage(response));
   return response.json();
@@ -213,15 +213,17 @@ export function getReportImageUrl(reportId: string): string {
   return `${API_BASE_URL}/reports/${encodeURIComponent(reportId)}/image`;
 }
 
-export async function requestRoute(params: { origin: RoutePoint; destination: RoutePoint; profile: RouteProfile }): Promise<RouteResponse> {
+export async function requestRoute(params: { origin: RoutePoint; destination: RoutePoint; profile: RouteProfile; blockedPoints?: RoutePoint[]; signal?: AbortSignal }): Promise<RouteResponse> {
   const response = await fetch(`${API_BASE_URL}/routes`, {
     method: 'POST',
+    signal: params.signal,
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       origin: params.origin,
       destination: params.destination,
       prefer_safe_route: true,
       profile: params.profile,
+      blocked_points: params.blockedPoints ?? [],
     }),
   });
   if (!response.ok) throw new Error(await errorMessage(response));
