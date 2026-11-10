@@ -32,34 +32,38 @@ type UseLiveBusesResult = {
  */
 export function useLiveBuses(coordinates: RoutePoint | undefined, enabled: boolean): UseLiveBusesResult {
   const [stops, setStops] = useState<BusStop[]>([]);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
   const [updatedAt, setUpdatedAt] = useState<number>();
   const [refreshKey, setRefreshKey] = useState(0);
 
   // 위치 객체가 자주 바뀌어도 약 100m 이상 이동했을 때만 다시 조회한다.
   const coordinatesRef = useRef(coordinates);
-  coordinatesRef.current = coordinates;
+  useEffect(() => {
+    coordinatesRef.current = coordinates;
+  }, [coordinates]);
   const coordinateKey = coordinates
     ? `${coordinates.latitude.toFixed(3)},${coordinates.longitude.toFixed(3)}`
     : '';
 
-  const reset = useCallback(() => {
-    setStops([]);
-    setError(undefined);
-    setUpdatedAt(undefined);
-    setLoading(false);
-  }, []);
+  const loadKey = enabled && coordinateKey ? `${coordinateKey}:${refreshKey}` : '';
+  const [previousLoadKey, setPreviousLoadKey] = useState(loadKey);
+  const [loading, setLoading] = useState(Boolean(loadKey));
+  if (previousLoadKey !== loadKey) {
+    setPreviousLoadKey(loadKey);
+    setLoading(Boolean(loadKey));
+    if (!loadKey) {
+      setStops([]);
+      setError(undefined);
+      setUpdatedAt(undefined);
+    }
+  }
 
   const refresh = useCallback(() => {
     setRefreshKey((value) => value + 1);
   }, []);
 
   useEffect(() => {
-    if (!enabled || !coordinateKey) {
-      reset();
-      return;
-    }
+    if (!loadKey) return;
 
     let cancelled = false;
     const loadStops = async () => {
@@ -87,14 +91,13 @@ export function useLiveBuses(coordinates: RoutePoint | undefined, enabled: boole
       }
     };
 
-    setLoading(true);
     const timer = setTimeout(() => void loadStops(), 300);
 
     return () => {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [coordinateKey, enabled, refreshKey, reset]);
+  }, [loadKey]);
 
   return { stops, loading, error, updatedAt, refresh };
 }

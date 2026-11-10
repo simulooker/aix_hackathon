@@ -18,7 +18,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { KakaoMap, type KakaoPlace, type MapViewport } from '@/src/components/KakaoMap';
+import { KakaoMap, type KakaoPlace, type KakaoSearchRequest, type MapViewport } from '@/src/components/KakaoMap';
 import { PrimaryButton } from '@/src/components/PrimaryButton';
 import { DEFAULT_REGION } from '@/src/constants/map';
 import { useLiveBuses } from '@/src/features/bus/useLiveBuses';
@@ -93,7 +93,7 @@ export default function MapScreen() {
   const [searchText, setSearchText] = useState('');
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string>();
-  const [searchRequest, setSearchRequest] = useState<{ query: string; requestId: number }>();
+  const [searchRequest, setSearchRequest] = useState<KakaoSearchRequest>();
   const [searchResults, setSearchResults] = useState<KakaoPlace[]>([]);
   const [accountMenuVisible, setAccountMenuVisible] = useState(false);
   const [recenterRequest, setRecenterRequest] = useState(0);
@@ -101,9 +101,17 @@ export default function MapScreen() {
   const [mapViewport, setMapViewport] = useState<MapViewport>();
   const [mapDataRefreshing, setMapDataRefreshing] = useState(false);
   const mapViewportRef = useRef<MapViewport | undefined>(undefined);
-  mapViewportRef.current = mapViewport;
   const locationRef = useRef(coordinates);
-  locationRef.current = coordinates;
+
+  useEffect(() => {
+    mapViewportRef.current = mapViewport;
+    locationRef.current = coordinates;
+  }, [mapViewport, coordinates]);
+
+  if (coordinates && !destination && !mapCenter) {
+    setMapCenter(coordinates);
+    setRecenterRequest((value) => value + 1);
+  }
 
   const profilePromptShown = useRef(false);
   const busErrorShown = useRef(false);
@@ -171,12 +179,6 @@ export default function MapScreen() {
   }, [environmentLocationKey, routeProfile]);
 
   useEffect(() => {
-    if (!coordinates || destination || mapCenter) return;
-    setMapCenter(coordinates);
-    setRecenterRequest((value) => value + 1);
-  }, [coordinates, destination, mapCenter]);
-
-  useEffect(() => {
     if (!preferencesInitialized || routeProfile || profilePromptShown.current) return;
     profilePromptShown.current = true;
     Alert.alert(
@@ -241,7 +243,7 @@ export default function MapScreen() {
     setSearchError(undefined);
     Keyboard.dismiss();
     setSearchResults([]);
-    setSearchRequest({ query, requestId: Date.now() });
+    setSearchRequest({ query, requestId: Date.now(), center: coordinates });
   };
 
   const findRoute = async () => {

@@ -20,7 +20,7 @@ type KakaoMapProps = {
   onMapLongPress?: (point: RoutePoint) => void;
   onViewportChange?: (viewport: MapViewport) => void;
   onHazardPress?: (hazard: HazardReport) => void;
-  searchRequest?: { query: string; requestId: number };
+  searchRequest?: KakaoSearchRequest;
   onSearchResults?: (results: KakaoPlace[]) => void;
   recenterRequest?: number;
   style?: StyleProp<ViewStyle>;
@@ -40,6 +40,12 @@ export type KakaoPlace = {
 export type MapViewport = {
   center: RoutePoint;
   level: number;
+};
+
+export type KakaoSearchRequest = {
+  query: string;
+  requestId: number;
+  center?: RoutePoint;
 };
 
 const KAKAO_BASE_URL = 'https://withyou-105736498036.asia-northeast3.run.app';
@@ -65,13 +71,6 @@ export function KakaoMap({
   const apiKey = process.env.EXPO_PUBLIC_KAKAO_MAP_KEY ?? '';
   const [mapError, setMapError] = useState<string>();
   const webViewRef = useRef<WebView<unknown>>(null);
-
-  const busPayloadRef = useRef({ stops: busStops });
-  busPayloadRef.current = { stops: busStops };
-  const hazardPayloadRef = useRef(hazards);
-  hazardPayloadRef.current = hazards;
-  const locationPayloadRef = useRef(currentLocation);
-  locationPayloadRef.current = currentLocation;
 
   const pushBusLayer = useCallback((payload: { stops: BusStop[] }) => {
     const encoded = JSON.stringify(JSON.stringify(payload));
@@ -130,7 +129,7 @@ export function KakaoMap({
   const html = useMemo(() => {
     const data = JSON.stringify({
       center,
-      searchCenter: locationPayloadRef.current ?? center,
+      searchCenter: searchRequest?.center ?? center,
       origin,
       destination,
       disasters,
@@ -701,11 +700,11 @@ marker(destPoint, '목적지');
       if (message.type === 'ready') {
         setMapError(undefined);
       } else if (message.type === 'busLayerReady') {
-        pushBusLayer(busPayloadRef.current);
+        pushBusLayer({ stops: busStops });
       } else if (message.type === 'hazardLayerReady') {
-        pushHazardLayer(hazardPayloadRef.current);
+        pushHazardLayer(hazards);
       } else if (message.type === 'locationLayerReady') {
-        pushCurrentLocation(locationPayloadRef.current);
+        pushCurrentLocation(currentLocation);
       } else if (message.type === 'error') {
         setMapError((message as { message?: string }).message ?? '카카오 지도를 불러오지 못했습니다.');
       } else if (message.type === 'press' && message.latitude != null && message.longitude != null) {
@@ -718,7 +717,7 @@ marker(destPoint, '목적지');
           level: message.level,
         });
       } else if (message.type === 'hazardPress' && message.hazardId) {
-        const hazard = hazardPayloadRef.current.find((item) => item.id === message.hazardId);
+        const hazard = hazards.find((item) => item.id === message.hazardId);
         if (hazard) onHazardPress?.(hazard);
       } else if (message.type === 'searchResults') {
         onSearchResults?.(message.results ?? []);

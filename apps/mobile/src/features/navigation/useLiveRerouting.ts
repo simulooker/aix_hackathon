@@ -15,9 +15,20 @@ export function useLiveRerouting(route: RouteResponse | undefined, position: Rou
   const [hazards, setHazards] = useState<HazardReport[]>([]);
   const [testReports, setTestReports] = useState<HazardReport[]>([]);
   const latest = useRef({ route, position, enabled, announce });
-  latest.current = { route, position, enabled, announce };
   const inject = useRef<((uri: string) => Promise<void>) | undefined>(undefined);
   const sessionId = route?.route_id;
+  const [stateSessionId, setStateSessionId] = useState(sessionId);
+  if (stateSessionId !== sessionId) {
+    setStateSessionId(sessionId);
+    setMessage('');
+    setTestReports([]);
+    setHazards([]);
+    setBusy(false);
+  }
+
+  useEffect(() => {
+    latest.current = { route, position, enabled, announce };
+  }, [route, position, enabled, announce]);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -32,7 +43,6 @@ export function useLiveRerouting(route: RouteResponse | undefined, position: Rou
     const pending = new Map<string, HazardReport>();
     const profile = useRouteStore.getState().profile ?? usePreferencesStore.getState().routeProfile;
     const destination = latest.current.route!.geometry.slice(-1)[0];
-    setMessage(''); setTestReports([]); setHazards([]); setBusy(false);
     if (!profile) return;
 
     async function reroute(reports: HazardReport[], origin: RoutePoint, test = false) {
