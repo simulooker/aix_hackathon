@@ -5,12 +5,12 @@
 node_modules/
 
 # Backend, datasets, training scripts, and local artifacts are not part of APK builds.
-services/
-datasets/
-scripts/
-docs/
-supabase/
-tmp/
+/services/
+/datasets/
+/scripts/
+/docs/
+/supabase/
+/tmp/
 /app/
 
 # Local and generated files
