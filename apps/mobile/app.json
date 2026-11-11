@@ -2,7 +2,7 @@
   "expo": {
     "name": "위드유",
     "slug": "withyou",
-    "version": "1.1.0",
+    "version": "1.1.1",
     "description": "AI 위험 분석과 이용자 맞춤형 안전 보행 경로를 제공하는 위드유 앱",
     "orientation": "portrait",
     "icon": "./assets/images/ai-safe-route-logo-v6.png",

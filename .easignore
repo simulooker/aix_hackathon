@@ -11,7 +11,7 @@ scripts/
 docs/
 supabase/
 tmp/
-app/
+/app/
 
 # Local and generated files
 /.pytest_cache
