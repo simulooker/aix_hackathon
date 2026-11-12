@@ -6,7 +6,7 @@ from app.core.config import settings
 from app.db.migrations import ensure_hazard_report_columns
 from app.db.session import Base, engine
 from app.models.report import HazardReport  # noqa: F401
-from app.models.user import EmailVerification, User  # noqa: F401
+from app.models.user import User  # noqa: F401
 
 Base.metadata.create_all(bind=engine)
 ensure_hazard_report_columns(engine)

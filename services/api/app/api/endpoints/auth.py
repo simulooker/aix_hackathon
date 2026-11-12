@@ -1,14 +1,10 @@
-import hashlib
-import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
-from fastapi_mail import ConnectionConfig, FastMail, MessageSchema, MessageType
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
 from app.core.security import (
     FAILED_ATTEMPTS,
     LOCKOUT_MINUTES,
@@ -19,14 +15,12 @@ from app.core.security import (
     verify_password,
 )
 from app.db.session import get_db
-from app.models.user import EmailVerification, User
+from app.models.user import User
 from app.schemas.auth import (
-    EmailRequest,
     PasswordChange,
     Token,
     UserRegister,
     UserResponse,
-    VerifyOTPRequest,
 )
 
 router = APIRouter()
@@ -35,109 +29,11 @@ LoginForm = Annotated[OAuth2PasswordRequestForm, Depends()]
 AuthenticatedUser = Annotated[User, Depends(get_current_user)]
 
 
-def otp_hash(email: str, code: str) -> str:
-    value = f"{settings.secret_key}:{email}:{code}".encode()
-    return hashlib.sha256(value).hexdigest()
-
-
-def mail_config() -> ConnectionConfig:
-    if not settings.smtp_user or not settings.smtp_password:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="이메일 발송 설정이 필요합니다. 서버의 SMTP_USER와 SMTP_PASSWORD를 확인해 주세요.",
-        )
-    return ConnectionConfig(
-        MAIL_USERNAME=settings.smtp_user,
-        MAIL_PASSWORD=settings.smtp_password,
-        MAIL_FROM=settings.smtp_user,
-        MAIL_FROM_NAME="위드유",
-        MAIL_PORT=settings.smtp_port,
-        MAIL_SERVER=settings.smtp_host,
-        MAIL_STARTTLS=True,
-        MAIL_SSL_TLS=False,
-        USE_CREDENTIALS=True,
-        VALIDATE_CERTS=True,
-    )
-
-
-@router.post("/send-otp")
-async def send_otp(request: EmailRequest, db: DatabaseSession):
-    email = str(request.email)
-    if db.query(User).filter(User.email == email).first():
-        raise HTTPException(status_code=400, detail="이미 가입된 이메일입니다.")
-    otp_code = f"{secrets.randbelow(900000) + 100000}"
-    verification = db.get(EmailVerification, email)
-    now = datetime.now(timezone.utc)
-    if verification is not None and verification.created_at is not None:
-        last_sent = verification.created_at
-        if last_sent.tzinfo is None:
-            last_sent = last_sent.replace(tzinfo=timezone.utc)
-        if now - last_sent < timedelta(seconds=60):
-            raise HTTPException(
-                status_code=429, detail="인증번호는 1분 후 다시 요청할 수 있습니다."
-            )
-    if verification is None:
-        verification = EmailVerification(email=email, code_hash="", expires_at=now)
-        db.add(verification)
-    verification.code_hash = otp_hash(email, otp_code)
-    verification.expires_at = now + timedelta(minutes=5)
-    verification.verified = False
-    verification.created_at = now
-    db.commit()
-    message = MessageSchema(
-        subject="[위드유] 회원가입 이메일 인증번호",
-        recipients=[email],
-        body=(
-            "<div style='font-family:Arial,sans-serif;padding:20px'>"
-            "<h2>위드유 회원가입 이메일 인증번호</h2>"
-            f"<h1 style='letter-spacing:5px'>{otp_code}</h1>"
-            "<p>인증번호는 5분간 유효합니다.</p></div>"
-        ),
-        subtype=MessageType.html,
-    )
-    try:
-        await FastMail(mail_config()).send_message(message)
-    except HTTPException:
-        db.delete(verification)
-        db.commit()
-        raise
-    except Exception as exc:
-        db.delete(verification)
-        db.commit()
-        raise HTTPException(status_code=500, detail=f"이메일 발송 실패: {exc}") from exc
-    return {"message": "인증번호를 이메일로 발송했습니다."}
-
-
-@router.post("/verify-otp")
-def verify_otp(request: VerifyOTPRequest, db: DatabaseSession):
-    email = str(request.email)
-    verification = db.get(EmailVerification, email)
-    if verification is None:
-        raise HTTPException(status_code=400, detail="인증번호를 먼저 요청해 주세요.")
-    expires_at = verification.expires_at
-    if expires_at.tzinfo is None:
-        expires_at = expires_at.replace(tzinfo=timezone.utc)
-    if datetime.now(timezone.utc) > expires_at:
-        db.delete(verification)
-        db.commit()
-        raise HTTPException(status_code=400, detail="인증번호가 만료되었습니다.")
-    if not secrets.compare_digest(
-        verification.code_hash, otp_hash(email, request.code.strip())
-    ):
-        raise HTTPException(status_code=400, detail="인증번호가 일치하지 않습니다.")
-    verification.verified = True
-    db.commit()
-    return {"message": "이메일 인증이 완료되었습니다."}
-
-
 @router.post(
     "/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED
 )
 def register(user_data: UserRegister, db: DatabaseSession):
     email = str(user_data.email)
-    verification = db.get(EmailVerification, email)
-    if verification is None or not verification.verified:
-        raise HTTPException(status_code=400, detail="이메일 인증을 먼저 완료해 주세요.")
     if db.query(User).filter(User.username == user_data.username).first():
         raise HTTPException(status_code=400, detail="이미 사용 중인 사용자 이름입니다.")
     if db.query(User).filter(User.email == email).first():
@@ -150,7 +46,6 @@ def register(user_data: UserRegister, db: DatabaseSession):
         hashed_password=get_password_hash(user_data.password),
     )
     db.add(user)
-    db.delete(verification)
     db.commit()
     db.refresh(user)
     return user

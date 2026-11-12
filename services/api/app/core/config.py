@@ -25,11 +25,6 @@ class Settings(BaseSettings):
     # (실제 재난 발생을 기다릴 수 없어 시연이 불가능한 경우에만 사용)
     disaster_demo_file: str | None = None
 
-    smtp_host: str = "smtp.gmail.com"
-    smtp_port: int = 587
-    smtp_user: str | None = None
-    smtp_password: str | None = None
-
     model_config = SettingsConfigDict(
         env_file=".env",
         extra="ignore",
