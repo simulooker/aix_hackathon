@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>위드유 · 보행 시연</title>
+<style>
+*{box-sizing:border-box} [hidden]{display:none!important}
+body{margin:0;min-height:100vh;display:grid;grid-template-columns:clamp(240px,18.3vw,390px) minmax(0,1fr);background:#f4f6f2;color:#172e25;font-family:"Nanum Myeongjo","Malgun Gothic",sans-serif}
+button{font:inherit;cursor:pointer;color:inherit}button:focus-visible{outline:3px solid #398553;outline-offset:4px}
+aside{background:#fff;border-right:1px solid #dfe7dc;padding:clamp(20px,2.3vw,55px);display:flex;flex-direction:column;gap:25px}
+.brand{display:flex;gap:12px;align-items:center;font-size:29px;font-weight:900;letter-spacing:-.08em}.brand img{width:43px;mix-blend-mode:multiply}.brand small{display:block;font-size:10px;letter-spacing:.27em}
+aside h2{font-size:clamp(25px,2.15vw,45px);line-height:1.4;letter-spacing:-.07em;margin:12px 0}p{line-height:1.75;color:#53695c;margin:0}.eyebrow{font-size:13px;font-weight:800;color:#176749;letter-spacing:.08em}
+nav{display:grid;gap:8px}.nav-label{font-size:12px;color:#53695c;margin:14px 8px 2px}.nav-item{display:flex;align-items:center;gap:12px;width:100%;border:0;background:transparent;border-radius:14px;text-align:left;padding:13px 10px}.nav-item:hover{background:#eff4ec}.nav-item[aria-current=true]{background:#133d30;color:white;box-shadow:0 6px 18px #18372a18}.nav-item small{display:block;margin-top:4px;color:#53695c;font-size:12px}.nav-item[aria-current=true] small{color:#c4e1ce}.icon{flex:none;background:#ebf2e8;color:#176749;width:36px;height:36px;border-radius:10px;display:grid;place-items:center}.icon img{width:100%;height:100%;object-fit:cover;border-radius:inherit}.nav-item[aria-current=true] .icon{background:#245447;color:#c6ee9e}
+aside footer{margin-top:auto;font-size:12px;color:#53695c;padding-top:18px}
+main{padding:clamp(20px,3.45vw,80px);min-width:0}.top{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #dce5d9;padding-bottom:24px;color:#506b5d;font-size:14px}.top button{border:0;background:transparent;padding:8px}.heading{margin:clamp(27px,3vw,62px) 0 26px}h1{font-size:clamp(31px,3vw,59px);letter-spacing:-.07em;margin:12px 0}.dot:before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:#579869;margin-right:8px;vertical-align:2px}
+.panel{background:white;border:1px solid #dbe5d7;border-radius:20px;overflow:hidden;box-shadow:0 12px 36px #1a432509}.hero{display:grid;grid-template-columns:1fr .52fr;align-items:center;gap:16px;background:#edf3e7;padding:clamp(24px,4vw,82px)}.hero h2{font-size:clamp(34px,4.1vw,78px);line-height:1.25;letter-spacing:-.075em;color:#214b37;margin:18px 0}.mark{text-align:center}.mark img{width:min(100%,240px);mix-blend-mode:multiply;display:block;margin:auto}.mark span{display:block;font-size:12px;letter-spacing:.4em;color:#416e54;margin-top:16px}
+.features{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;padding:26px 30px}.features strong{display:block;margin-bottom:5px}.features p{font-size:13px}.video-panel{padding:20px}.video-panel strong{display:block;margin-bottom:14px}video{width:100%;display:block;max-height:65vh;aspect-ratio:16/9;background:#09150f;border-radius:12px}.status{padding-top:12px}
+@media(max-width:760px){body{display:block}aside{border-right:0;border-bottom:1px solid #dfe7dc;gap:14px}aside .lead,aside footer,.nav-label{display:none}nav{grid-template-columns:repeat(2,minmax(0,1fr))}.nav-item small{display:none}.hero{grid-template-columns:1fr .4fr}.features{grid-template-columns:1fr;gap:14px;padding:20px}}
+
+.feature-icon{display:block;position:relative;width:22px;height:22px}
+.camera-icon{width:21px;height:15px;border:1.8px solid currentColor;border-radius:4px}
+.camera-icon:before{content:"";position:absolute;top:-4px;left:4px;width:7px;height:3px;border:1.8px solid currentColor;border-bottom:0;border-radius:2px 2px 0 0}
+.camera-icon:after{content:"";position:absolute;width:5px;height:5px;left:50%;top:50%;transform:translate(-50%,-50%);border:1.6px solid currentColor;border-radius:50%}
+.route-icon span{position:absolute;left:4px;top:5px;width:14px;height:12px;border:1.8px solid currentColor;border-left:0;border-radius:0 8px 8px 0}
+.route-icon:before,.route-icon:after{content:"";position:absolute;left:0;width:5px;height:5px;border:1.6px solid currentColor;border-radius:50%}
+.route-icon:before{top:2px}.route-icon:after{bottom:2px}
+</style>
+<aside>
+<div class="brand"><img src="media/mark.png" alt=""><div>위드유<small>WITH YOU</small></div></div>
+<div class="lead"><div class="eyebrow">보행 시연</div><h2>각자의 걸음에,<br>맞는 길을.</h2><p>앱 속 안내가 실제 길에서<br>어떻게 이어지는지 확인해 보세요.</p></div>
+<nav aria-label="보행 시연">
+<button type="button" class="nav-item" data-view="0" aria-current="true"><span class="icon" aria-hidden="true">⌂</span><span><b>위드유 소개</b><small>모두를 위한 보행 안내</small></span></button>
+<div class="nav-label">사용자별 시연</div>
+<button type="button" class="nav-item" data-view="1"><span class="icon"><img src="media/profile-1.png" alt=""></span><span><b>일반 보행자</b><small>일상 속 더 안전한 이동</small></span></button>
+<button type="button" class="nav-item" data-view="2"><span class="icon"><img src="media/profile-2.png" alt=""></span><span><b>고령 보행자</b><small>경사를 살피며 천천히</small></span></button>
+<button type="button" class="nav-item" data-view="3"><span class="icon"><img src="media/profile-3.png" alt=""></span><span><b>휠체어 이용자</b><small>통행 가능한 길을 찾아서</small></span></button>
+<div class="nav-label">기능별 시연</div>
+<button type="button" class="nav-item" data-view="4"><span class="icon" aria-hidden="true"><span class="feature-icon camera-icon"></span></span><span><b>실시간 제보</b><small>제보가 지도에 반영되는 과정</small></span></button>
+<button type="button" class="nav-item" data-view="5"><span class="icon" aria-hidden="true"><span class="feature-icon route-icon"><span></span></span></span><span><b>재난구역 우회</b><small>위험 구역을 피해 가는 경로</small></span></button>
+</nav><footer>한 사람이 알려준 길이,<br>다음 사람의 안전한 길이 됩니다.</footer>
+</aside>
+<main>
+<div class="top"><span>위드유　/　보행 시연</span><button id="fullscreen" type="button">⛶　발표 모드</button></div>
+<div class="heading"><div class="eyebrow dot" id="section">모두를 위한 보행 안내</div><h1 id="title">안전한 길을, 함께 찾아요.</h1><p id="description">이동하는 사람의 상황을 살피는 보행 내비게이션, 위드유입니다.</p></div>
+<section class="panel" id="intro">
+<div class="hero"><div><div class="eyebrow">함께 걷는 내비게이션</div><h2>모두에게,<br>안전한 보행을.</h2><p>위드유는 이용자 유형과 길 위의 위험을 살펴<br>더 안전한 보행 경로를 안내합니다.</p></div><div class="mark"><img src="media/mark.png" alt="위드유 로고"><span>WITH YOU</span></div></div>
+<div class="features"><div><strong>나에게 맞는 경로</strong><p>이용자 유형에 맞춰 경사와 장애물을 고려해요.</p></div><div><strong>함께 알리는 위험</strong><p>사진 속 장애물을 분석하고 위험 정보를 경로에 반영해요.</p></div><div><strong>앱과 현장을 함께 시연</strong><p>왼쪽에서 이용자 유형을 선택해 보세요.</p></div></div>
+</section>
+<section class="panel video-panel" id="demo" hidden><strong id="video-label">사용자별 보행 시연</strong><video controls playsinline aria-labelledby="video-label"></video><p id="status" class="status" role="status" hidden>영상을 불러오지 못했어요.</p></section>
+</main>
+<script>
+const buttons = [...document.querySelectorAll('.nav-item')];
+const video = document.querySelector('video');
+const intro = document.querySelector('#intro');
+const demo = document.querySelector('#demo');
+const status = document.querySelector('#status');
+const fullscreen = document.querySelector('#fullscreen');
+const titles = ['안전한 길을, 함께 찾아요.', '일상 속에서도, 더 안전하게.', '경사를 살피며, 천천히.', '통행 가능한 길을 찾아서.', '실시간 제보', '재난구역 우회'];
+
+for (const button of buttons) {
+  button.addEventListener('click', () => {
+    const index = Number(button.dataset.view);
+    if (button.hasAttribute('aria-current')) return;
+    for (const item of buttons) item.removeAttribute('aria-current');
+    button.setAttribute('aria-current', 'true');
+    const label = button.querySelector('b').textContent;
+    document.querySelector('#section').textContent = index ? label : '모두를 위한 보행 안내';
+    document.querySelector('#title').textContent = titles[index];
+    document.querySelector('#description').textContent = index >= 4
+      ? button.querySelector('small').textContent
+      : index
+      ? '앱의 경로 안내와 실제 보행 모습을 시연 영상으로 확인해 보세요.'
+      : '이동하는 사람의 상황을 살피는 보행 내비게이션, 위드유입니다.';
+    video.pause();
+    intro.hidden = Boolean(index);
+    demo.hidden = !index;
+    status.hidden = true;
+    if (index) {
+      document.querySelector('#video-label').textContent = label + ' 시연';
+      video.poster = 'media/' + index + '.jpg';
+      video.src = index === 5 ? 'media/5-17s.mp4' : 'media/' + index + '.mp4';
+      video.play().catch(() => {});
+    } else {
+      video.removeAttribute('src');
+      video.load();
+    }
+  });
+}
+video.addEventListener('error', () => { if (!demo.hidden) status.hidden = false; });
+if (!document.fullscreenEnabled) fullscreen.hidden = true;
+fullscreen.addEventListener('click', async () => {
+  try {
+    if (document.fullscreenElement) await document.exitFullscreen();
+    else await document.documentElement.requestFullscreen();
+  } catch { fullscreen.hidden = true; }
+});
+document.addEventListener('fullscreenchange', () => {
+  fullscreen.textContent = document.fullscreenElement ? '⛶　발표 모드 종료' : '⛶　발표 모드';
+});
+</script>
+</html>
