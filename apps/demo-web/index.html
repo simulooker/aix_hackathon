@@ -9,7 +9,7 @@ button{font:inherit;cursor:pointer;color:inherit}button:focus-visible{outline:3p
 aside{background:#fff;border-right:1px solid #dfe7dc;padding:clamp(20px,2.3vw,55px);display:flex;flex-direction:column;gap:25px}
 .brand{display:flex;gap:12px;align-items:center;font-size:29px;font-weight:900;letter-spacing:-.08em}.brand img{width:43px;mix-blend-mode:multiply}.brand small{display:block;font-size:10px;letter-spacing:.27em}
 aside h2{font-size:clamp(25px,2.15vw,45px);line-height:1.4;letter-spacing:-.07em;margin:12px 0}p{line-height:1.75;color:#53695c;margin:0}.eyebrow{font-size:13px;font-weight:800;color:#176749;letter-spacing:.08em}
-nav{display:grid;gap:8px}.nav-label{font-size:12px;color:#53695c;margin:14px 8px 2px}.nav-item{display:flex;align-items:center;gap:12px;width:100%;border:0;background:transparent;border-radius:14px;text-align:left;padding:13px 10px}.nav-item:hover{background:#eff4ec}.nav-item[aria-current=true]{background:#133d30;color:white;box-shadow:0 6px 18px #18372a18}.nav-item small{display:block;margin-top:4px;color:#53695c;font-size:12px}.nav-item[aria-current=true] small{color:#c4e1ce}.icon{flex:none;background:#ebf2e8;color:#176749;width:36px;height:36px;border-radius:10px;display:grid;place-items:center}.icon img{width:100%;height:100%;object-fit:cover;border-radius:inherit}.nav-item[aria-current=true] .icon{background:#245447;color:#c6ee9e}
+nav{display:grid;gap:8px}.nav-label{font-size:12px;color:#53695c;margin:14px 8px 2px}.nav-item{display:flex;align-items:center;gap:12px;width:100%;border:0;background:transparent;border-radius:14px;text-align:left;padding:13px 10px}.nav-item:hover{background:#eff4ec}.nav-item[aria-current=true]{box-shadow:inset 0 0 0 1px #a8bfae}.nav-item small{display:block;margin-top:4px;color:#53695c;font-size:12px}.icon{flex:none;background:#ebf2e8;color:#176749;width:36px;height:36px;border-radius:10px;display:grid;place-items:center}.profile-person{position:relative;background:#edf6f2;color:#14785d}.profile-person::before,.profile-person::after{content:"";position:absolute;border:2px solid currentColor;box-sizing:border-box}.profile-person::before{width:8px;height:8px;border-radius:50%;top:7px}.profile-person::after{width:16px;height:9px;border-radius:9px 9px 3px 3px;top:17px}.icon img{width:100%;height:100%;object-fit:cover;border-radius:inherit}
 aside footer{margin-top:auto;font-size:12px;color:#53695c;padding-top:18px}
 main{padding:clamp(20px,3.45vw,80px);min-width:0}.top{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #dce5d9;padding-bottom:24px;color:#506b5d;font-size:14px}.top button{border:0;background:transparent;padding:8px}.heading{margin:clamp(27px,3vw,62px) 0 26px}h1{font-size:clamp(31px,3vw,59px);letter-spacing:-.07em;margin:12px 0}.dot:before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:#579869;margin-right:8px;vertical-align:2px}
 .panel{background:white;border:1px solid #dbe5d7;border-radius:20px;overflow:hidden;box-shadow:0 12px 36px #1a432509}.hero{display:grid;grid-template-columns:1fr .52fr;align-items:center;gap:16px;background:#edf3e7;padding:clamp(24px,4vw,82px)}.hero h2{font-size:clamp(34px,4.1vw,78px);line-height:1.25;letter-spacing:-.075em;color:#214b37;margin:18px 0}.mark{text-align:center}.mark img{width:min(100%,240px);mix-blend-mode:multiply;display:block;margin:auto}.mark span{display:block;font-size:12px;letter-spacing:.4em;color:#416e54;margin-top:16px}
@@ -23,6 +23,19 @@ main{padding:clamp(20px,3.45vw,80px);min-width:0}.top{display:flex;align-items:c
 .route-icon span{position:absolute;left:4px;top:5px;width:14px;height:12px;border:1.8px solid currentColor;border-left:0;border-radius:0 8px 8px 0}
 .route-icon:before,.route-icon:after{content:"";position:absolute;left:0;width:5px;height:5px;border:1.6px solid currentColor;border-radius:50%}
 .route-icon:before{top:2px}.route-icon:after{bottom:2px}
+.risk-panel{padding:clamp(12px,1.5vw,24px)}
+.risk-map{position:relative;width:100%;max-width:min(1280px,150vh);margin:auto}.risk-map>img{display:block;width:100%;height:auto;border-radius:12px}
+.risk-pin{position:absolute;left:var(--x);top:var(--y);translate:-50% -50%;width:clamp(14px,3.8%,22px);height:auto;aspect-ratio:1;z-index:1;border:0;border-radius:50%;background:transparent;display:grid;place-items:center;padding:0}
+.risk-pin::before,.risk-key i{content:"";width:16px;height:16px;border-radius:50%;background:var(--risk);border:2px solid white;box-shadow:0 1px 5px #152e25aa}
+.risk-map-window{position:relative;width:100%;max-width:min(760px,70vh);overflow:hidden;border-radius:12px;margin:auto}.risk-pin{width:6.2%;background:transparent}.risk-pin::before{width:100%;height:100%;opacity:0}.risk-pin[aria-pressed=true]::before,.risk-pin:hover::before{opacity:1}.risk-pin[aria-pressed=true]::before,.risk-pin:hover::before{outline:3px solid #173b30;outline-offset:2px}
+.risk-yellow{--risk:#fdb022}.risk-orange{--risk:#f79009}.risk-red{--risk:#d92d20}
+.risk-key{display:flex;gap:12px;flex-wrap:wrap;margin:14px 0 20px;font-size:13px}.risk-key span{display:inline-flex;align-items:center;gap:5px}.risk-key i{width:12px;height:12px;box-shadow:none;border:0}
+.risk-key{max-width:min(1280px,150vh);margin:0 auto 12px}
+.risk-report{width:min(420px,calc(100vw - 32px));max-height:calc(100dvh - 32px);padding:16px;border:1px solid #dbe5d7;border-radius:16px;background:#fff;color:inherit;box-shadow:0 20px 60px #0e251850}
+.risk-report::backdrop{background:#13271f80}
+.risk-report header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}
+.risk-report button{border:0;border-radius:8px;background:#edf3e7;padding:6px 12px;font-size:20px}
+.risk-report a{display:inline-block;margin-top:12px;color:#176749;font-weight:700}.risk-report img{width:100%;max-height:calc(100dvh - 125px);object-fit:contain;display:block;border-radius:8px}
 </style>
 <aside>
 <div class="brand"><img src="media/mark.png" alt=""><div>위드유<small>WITH YOU</small></div></div>
@@ -30,22 +43,40 @@ main{padding:clamp(20px,3.45vw,80px);min-width:0}.top{display:flex;align-items:c
 <nav aria-label="보행 시연">
 <button type="button" class="nav-item" data-view="0" aria-current="true"><span class="icon" aria-hidden="true">⌂</span><span><b>위드유 소개</b><small>모두를 위한 보행 안내</small></span></button>
 <div class="nav-label">사용자별 시연</div>
-<button type="button" class="nav-item" data-view="1"><span class="icon"><img src="media/profile-1.png" alt=""></span><span><b>일반 보행자</b><small>일상 속 더 안전한 이동</small></span></button>
+<button type="button" class="nav-item" data-view="1"><span class="icon profile-person" aria-hidden="true"></span><span><b>일반 보행자</b><small>일상 속 더 안전한 이동</small></span></button>
 <button type="button" class="nav-item" data-view="2"><span class="icon"><img src="media/profile-2.png" alt=""></span><span><b>고령 보행자</b><small>경사를 살피며 천천히</small></span></button>
 <button type="button" class="nav-item" data-view="3"><span class="icon"><img src="media/profile-3.png" alt=""></span><span><b>휠체어 이용자</b><small>통행 가능한 길을 찾아서</small></span></button>
 <div class="nav-label">기능별 시연</div>
 <button type="button" class="nav-item" data-view="4"><span class="icon" aria-hidden="true"><span class="feature-icon camera-icon"></span></span><span><b>실시간 제보</b><small>제보가 지도에 반영되는 과정</small></span></button>
 <button type="button" class="nav-item" data-view="5"><span class="icon" aria-hidden="true"><span class="feature-icon route-icon"><span></span></span></span><span><b>재난구역 우회</b><small>위험 구역을 피해 가는 경로</small></span></button>
+<button type="button" class="nav-item" data-view="6"><span class="icon" aria-hidden="true">●</span><span><b>보행 위험도</b><small>지도에서 제보 사진 확인</small></span></button>
 </nav><footer>한 사람이 알려준 길이,<br>다음 사람의 안전한 길이 됩니다.</footer>
 </aside>
 <main>
-<div class="top"><span>위드유　/　보행 시연</span><button id="fullscreen" type="button">⛶　발표 모드</button></div>
+<div class="top"><span>위드유　/　보행 시연</span><button id="fullscreen" type="button" aria-label="발표 모드">⛶</button></div>
 <div class="heading"><div class="eyebrow dot" id="section">모두를 위한 보행 안내</div><h1 id="title">안전한 길을, 함께 찾아요.</h1><p id="description">이동하는 사람의 상황을 살피는 보행 내비게이션, 위드유입니다.</p></div>
 <section class="panel" id="intro">
 <div class="hero"><div><div class="eyebrow">함께 걷는 내비게이션</div><h2>모두에게,<br>안전한 보행을.</h2><p>위드유는 이용자 유형과 길 위의 위험을 살펴<br>더 안전한 보행 경로를 안내합니다.</p></div><div class="mark"><img src="media/mark.png" alt="위드유 로고"><span>WITH YOU</span></div></div>
 <div class="features"><div><strong>나에게 맞는 경로</strong><p>이용자 유형에 맞춰 경사와 장애물을 고려해요.</p></div><div><strong>함께 알리는 위험</strong><p>사진 속 장애물을 분석하고 위험 정보를 경로에 반영해요.</p></div><div><strong>앱과 현장을 함께 시연</strong><p>왼쪽에서 이용자 유형을 선택해 보세요.</p></div></div>
 </section>
 <section class="panel video-panel" id="demo" hidden><strong id="video-label">사용자별 보행 시연</strong><video controls playsinline aria-labelledby="video-label"></video><p id="status" class="status" role="status" hidden>영상을 불러오지 못했어요.</p></section>
+<section class="panel risk-panel" id="risk-demo" hidden aria-label="보행 위험도 지도">
+<div class="risk-key"><span class="risk-yellow"><i></i>낮은 위험</span><span class="risk-orange"><i></i>주의 필요</span><span class="risk-red"><i></i>통행 어려움</span></div>
+  <div class="risk-map-window"><div class="risk-map">
+    <img src="media/risk-map-clear.jpg" alt="위드유 앱 보행 위험도 지도 화면">
+    <button type="button" class="risk-pin risk-yellow" data-risk="yellow" data-report="9" data-source="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQ4YKilPO0di7zMQB8woDlwakdUUInBfdTl2iB1xx1bUHVToCyKo5416OY&amp;s=10" aria-label="노랑 · 낮은 위험 제보 1" aria-pressed="false" style="--x:51.938%;--y:32.969%"></button>
+    <button type="button" class="risk-pin risk-yellow" data-risk="yellow" data-report="10" data-source="https://cdn.daejonilbo.com/news/photo/201906/1374643_277258_1610.jpg" aria-label="노랑 · 낮은 위험 제보 2" aria-pressed="false" style="--x:68.798%;--y:31.172%"></button>
+    <button type="button" class="risk-pin risk-yellow" data-risk="yellow" data-report="6" aria-label="노랑 · 낮은 위험 제보 3" aria-pressed="false" style="--x:55.523%;--y:44.141%"></button>
+    <button type="button" class="risk-pin risk-red" data-risk="red" data-report="5" aria-label="빨강 · 통행 어려움 제보 4" aria-pressed="false" style="--x:57.461%;--y:54.219%"></button>
+    <button type="button" class="risk-pin risk-orange" data-risk="orange" data-report="8" data-source="https://cdn.channelpnu.pusan.ac.kr/news/photo/202411/36367_18955_1520.jpg" aria-label="주황 · 주의 필요 제보 5" aria-pressed="false" style="--x:50.581%;--y:73.047%"></button>
+    <button type="button" class="risk-pin risk-orange" data-risk="orange" data-report="1" aria-label="주황 · 주의 필요 제보 6" aria-pressed="false" style="--x:30.814%;--y:77.109%"></button>
+  </div></div>
+  <dialog class="risk-report" id="risk-report" aria-labelledby="risk-title">
+    <header><strong id="risk-title"></strong><form method="dialog"><button type="submit" aria-label="제보 사진 닫기">×</button></form></header>
+    <img id="risk-photo" alt="" referrerpolicy="no-referrer" hidden>
+    <a id="risk-source" target="_blank" rel="noopener noreferrer" hidden>원본 사진 열기 ↗</a>
+  </dialog>
+</section>
 </main>
 <script>
 const buttons = [...document.querySelectorAll('.nav-item')];
@@ -54,7 +85,46 @@ const intro = document.querySelector('#intro');
 const demo = document.querySelector('#demo');
 const status = document.querySelector('#status');
 const fullscreen = document.querySelector('#fullscreen');
-const titles = ['안전한 길을, 함께 찾아요.', '일상 속에서도, 더 안전하게.', '경사를 살피며, 천천히.', '통행 가능한 길을 찾아서.', '실시간 제보', '재난구역 우회'];
+const titles = ['안전한 길을, 함께 찾아요.', '일상 속에서도, 더 안전하게.', '경사를 살피며, 천천히.', '통행 가능한 길을 찾아서.', '실시간 제보', '재난구역 우회', '점 색깔로 보는 보행 위험도'];
+
+let videoRequest;
+let videoObjectUrl;
+
+function resetVideo() {
+  videoRequest?.abort();
+  video.pause();
+  video.removeAttribute('src');
+  video.load();
+  if (videoObjectUrl) URL.revokeObjectURL(videoObjectUrl);
+  videoObjectUrl = undefined;
+}
+
+async function loadVideo(index) {
+  const request = new AbortController();
+  videoRequest = request;
+  status.textContent = '영상을 불러오는 중이에요.';
+  status.hidden = false;
+
+  try {
+    const filename = index === 5 ? '5-17s.mp4' : index + '.mp4';
+    const response = await fetch('media/' + filename, { signal: request.signal });
+    if (!response.ok) throw new Error('Video request failed');
+    const file = await response.blob();
+    if (request.signal.aborted) return;
+    videoObjectUrl = URL.createObjectURL(file);
+    video.src = videoObjectUrl;
+    status.hidden = true;
+    video.play().catch(() => {});
+  } catch {
+    if (!request.signal.aborted) showVideoError();
+  }
+}
+
+function showVideoError() {
+  if (demo.hidden || !video.getAttribute('src') && status.hidden) return;
+  status.textContent = '영상을 불러오지 못했어요.';
+  status.hidden = false;
+}
 
 for (const button of buttons) {
   button.addEventListener('click', () => {
@@ -70,22 +140,56 @@ for (const button of buttons) {
       : index
       ? '앱의 경로 안내와 실제 보행 모습을 시연 영상으로 확인해 보세요.'
       : '이동하는 사람의 상황을 살피는 보행 내비게이션, 위드유입니다.';
-    video.pause();
+    resetVideo();
     intro.hidden = Boolean(index);
-    demo.hidden = !index;
+    demo.hidden = !index || index === 6;
+    document.querySelector('#risk-demo').hidden = index !== 6;
+    if (index !== 6) resetRiskDemo();
     status.hidden = true;
-    if (index) {
+    if (index && index < 6) {
       document.querySelector('#video-label').textContent = label + ' 시연';
       video.poster = 'media/' + index + '.jpg';
-      video.src = index === 5 ? 'media/5-17s.mp4' : 'media/' + index + '.mp4';
-      video.play().catch(() => {});
-    } else {
-      video.removeAttribute('src');
-      video.load();
+      void loadVideo(index);
     }
   });
 }
-video.addEventListener('error', () => { if (!demo.hidden) status.hidden = false; });
+const reportLabels = { yellow: '노랑 · 낮은 위험', orange: '주황 · 주의 필요', red: '빨강 · 통행 어려움' };
+const riskPins = document.querySelectorAll('.risk-pin');
+const riskPhoto = document.querySelector('#risk-photo');
+const riskSource = document.querySelector('#risk-source');
+const riskTitle = document.querySelector('#risk-title');
+const riskReport = document.querySelector('#risk-report');
+
+function resetRiskDemo() {
+  for (const pin of riskPins) pin.setAttribute('aria-pressed', 'false');
+  if (riskReport.open) riskReport.close();
+
+  riskPhoto.removeAttribute('src');
+  riskPhoto.hidden = true;
+  riskSource.hidden = true;
+  riskSource.removeAttribute('href');
+
+  riskPhoto.alt = '';
+}
+riskReport.addEventListener('close', resetRiskDemo);
+riskPhoto.addEventListener('error', () => { if (riskReport.open) riskPhoto.hidden = true; });
+for (const pin of riskPins) {
+  pin.addEventListener('click', () => {
+    const label = reportLabels[pin.dataset.risk];
+    for (const item of riskPins) item.setAttribute('aria-pressed', String(item === pin));
+    riskTitle.textContent = label;
+    riskPhoto.alt = label + ' 제보 현장 사진';
+    const source = pin.dataset.source;
+    if (source) {
+      riskSource.href = source;
+      riskSource.hidden = false;
+    }
+    riskPhoto.src = source || 'media/risk-report-' + pin.dataset.report + '.jpg';
+    riskPhoto.hidden = false;
+    riskReport.showModal();
+  });
+}
+video.addEventListener('error', showVideoError);
 if (!document.fullscreenEnabled) fullscreen.hidden = true;
 fullscreen.addEventListener('click', async () => {
   try {
@@ -94,7 +198,7 @@ fullscreen.addEventListener('click', async () => {
   } catch { fullscreen.hidden = true; }
 });
 document.addEventListener('fullscreenchange', () => {
-  fullscreen.textContent = document.fullscreenElement ? '⛶　발표 모드 종료' : '⛶　발표 모드';
+  fullscreen.setAttribute('aria-label', document.fullscreenElement ? '발표 모드 종료' : '발표 모드');
 });
 </script>
 </html>
